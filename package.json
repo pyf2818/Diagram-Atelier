@@ -1,0 +1,16 @@
+{
+  "name": "atelier-diagram-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI 智能绘图工具 — 自然语言生成 draw.io 兼容的可编辑流程图 / 架构图 / 思维导图",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node test/smoke.mjs && node test/mcp.mjs && node test/visio.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0"
+}

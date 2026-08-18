@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Diagram Atelier · 智能绘图工作台</title>
+<link rel="stylesheet" href="./styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2324314F'/%3E%3Cpath d='M9 22V10h5.2c2.6 0 4.3 1.5 4.3 3.6 0 1.4-.7 2.4-1.9 2.9 1.6.4 2.6 1.6 2.6 3.2 0 2.4-1.9 4-4.8 4H9zm2.6-7.1h2.3c1.2 0 1.9-.6 1.9-1.6s-.7-1.5-1.9-1.5h-2.3v3.1zm0 5.1h2.6c1.4 0 2.2-.6 2.2-1.8s-.8-1.8-2.2-1.8h-2.6v3.6z' fill='%23C9A961'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<!-- ══════════════════ 顶栏 ══════════════════ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 40 40" width="34" height="34">
+        <rect width="40" height="40" rx="9" fill="url(#bg)"/>
+        <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#2C3A5C"/><stop offset="1" stop-color="#1A2338"/>
+        </linearGradient></defs>
+        <g stroke="#C9A961" stroke-width="1.5" fill="none">
+          <rect x="8" y="8" width="11" height="8" rx="2"/>
+          <rect x="21" y="24" width="11" height="8" rx="2"/>
+          <path d="M13.5 16v6h13v2"/>
+        </g>
+        <circle cx="13.5" cy="26" r="2.6" fill="#C9A961" opacity=".55"/>
+      </svg>
+    </span>
+    <span class="brand-text">
+      <strong>Diagram&nbsp;Atelier</strong>
+      <em>自然语言 · 智能绘图工作台</em>
+    </span>
+  </div>
+
+  <div class="topbar-mid">
+    <div class="model-pill" id="modelPill" role="button" tabindex="0" title="点击配置大模型">
+      <span class="dot" id="modelDot"></span>
+      <span class="model-name" id="modelName">未配置模型</span>
+      <svg viewBox="0 0 16 16" width="12" height="12" class="chev"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+    </div>
+  </div>
+
+  <nav class="topbar-actions">
+    <button class="btn ghost" id="btnToggleSidebar" title="收起 / 展开 AI 助手面板" aria-label="收起 / 展开 AI 助手面板" aria-expanded="true">
+      <span class="ico-collapse"><svg viewBox="0 0 20 20" width="15" height="15"><rect x="3" y="4.5" width="14" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 7.5l-2.5 2.5 2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="ico-expand"><svg viewBox="0 0 20 20" width="15" height="15"><rect x="3" y="4.5" width="14" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 7.5l2.5 2.5-2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    </button>
+    <div class="save-ind" id="saveInd" title="所有改动都会自动保存到本机浏览器（localStorage）">
+      <span class="si-dot"></span>
+      <span class="si-text" id="saveText">已自动保存</span>
+    </div>
+    <button class="btn ghost" id="btnTemplates">
+      <svg viewBox="0 0 20 20" width="15" height="15"><rect x="2.5" y="2.5" width="6" height="6" rx="1.4" stroke="currentColor" fill="none" stroke-width="1.5"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.4" stroke="currentColor" fill="none" stroke-width="1.5"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.4" stroke="currentColor" fill="none" stroke-width="1.5"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.4" stroke="currentColor" fill="none" stroke-width="1.5"/></svg>
+      模板
+    </button>
+    <button class="btn ghost" id="btnCollab" title="开启实时协作：生成协作链接，邀请他人同图编辑">
+      <svg viewBox="0 0 20 20" width="15" height="15"><circle cx="7" cy="7.5" r="3" stroke="currentColor" fill="none" stroke-width="1.5"/><circle cx="14" cy="8.5" r="2.4" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M2.5 16c0-2.6 2-4.4 4.5-4.4S11.5 13.4 11.5 16M12.5 16c0-1.8 1.1-3.2 2.8-3.4" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round"/></svg>
+      协作
+    </button>
+    <button class="btn ghost" id="btnHistory">
+      <svg viewBox="0 0 20 20" width="15" height="15"><circle cx="10" cy="10" r="7.2" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M10 6v4.4l3 1.8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+      版本 <span class="badge" id="verBadge">0</span>
+    </button>
+    <div class="dropdown" id="exportWrap">
+      <button class="btn ghost" id="btnExport">
+        <svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 3v9m0 0l-3.2-3.2M10 12l3.2-3.2M4 15.5h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        导出
+      </button>
+      <div class="dropdown-menu" id="exportMenu">
+        <button data-fmt="png">PNG 图片 <small>2× 高清</small></button>
+        <button data-fmt="pdf">PDF 文档 <small>矢量清晰</small></button>
+        <button data-fmt="svg">SVG 矢量 <small>可无损缩放</small></button>
+        <button data-fmt="copypng">复制图片 <small>粘到文档/聊天</small></button>
+        <button data-fmt="copysvg">复制 SVG <small>粘到文档/聊天</small></button>
+        <button data-fmt="drawio">.drawio 源文件 <small>可再编辑</small></button>
+        <button data-fmt="share" class="em-share">🔗 分享只读链接 <small>生成可分享链接</small></button>
+        <button data-fmt="savetpl" class="em-tpl">💾 存为模板库 <small>沉淀当前图</small></button>
+        <button data-fmt="xmlview">查看 XML <small>直接复制</small></button>
+      </div>
+    </div>
+    <button class="btn ghost" id="btnImportVisio" title="导入 Visio (.vsdx) 文件，转换为可编辑的 draw.io 图">
+      <svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 13V4m0 0L6.8 7.2M10 4l3.2 3.2M4 16h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+      导入 Visio
+    </button>
+    <input type="file" id="visioFile" accept=".vsdx,application/vnd.ms-visio.drawing.main+xml" hidden />
+    <button class="btn primary" id="btnSettings">
+      <svg viewBox="0 0 20 20" width="15" height="15"><circle cx="10" cy="10" r="2.6" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M15.3 4.7l-1.6 1.6M6.3 13.7l-1.6 1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      模型设置
+    </button>
+    <button class="theme-toggle" id="btnTheme" title="切换深 / 浅色主题" aria-label="切换主题">
+      <svg class="ico-sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5 5l1.6 1.6M17.4 17.4 19 19M19 5l-1.6 1.6M6.6 17.4 5 19"/>
+      </svg>
+      <svg class="ico-moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <path d="M20 14.5A8 8 0 1 1 9.5 4a6.3 6.3 0 0 0 10.5 10.5z"/>
+      </svg>
+    </button>
+  </nav>
+</header>
+
+<!-- ══════════════════ 主工作区 ══════════════════ -->
+<main class="workspace">
+
+  <!-- ── AI Agent 面板 ── -->
+  <aside class="agent" id="agentPanel">
+    <div class="agent-head">
+      <div class="agent-title">
+        <span class="orb" id="agentOrb"></span>
+        <div>
+          <h2>AI 绘图助手</h2>
+          <p id="agentSub">描述你想画的图，我来生成可编辑图表</p>
+        </div>
+      </div>
+      <div class="agent-head-actions">
+        <button class="icon-btn" id="btnConvs" title="对话列表">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="5.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="6" cy="14.5" r="1.1" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNewChat" title="开启新会话">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-btn" id="btnTypeToggle" title="折叠 / 展开 类型选择" aria-label="折叠类型选择">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M5 12l5-5 5 5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- 对话列表抽屉（覆盖在 Agent 面板上） -->
+    <div class="conv-drawer" id="convDrawer" hidden>
+      <div class="drawer-head">
+        <h3>对话列表</h3>
+        <button class="icon-btn" data-close="convDrawer"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="drawer-body" id="convList"></div>
+    </div>
+
+    <div class="type-strip" id="typeStrip">
+      <button class="chip active" data-type="auto">自动判断</button>
+      <button class="chip" data-type="flowchart">流程图</button>
+      <button class="chip" data-type="architecture">架构图</button>
+      <button class="chip" data-type="mindmap">思维导图</button>
+      <button class="chip" data-type="sequence">时序图</button>
+      <button class="chip" data-type="er">ER 图</button>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="composer">
+      <div class="edit-mode" id="editMode" hidden>
+        <span class="em-dot"></span>
+        <span>正在基于<b>当前图</b>迭代 · 直接描述修改，AI 会在原图上改</span>
+      </div>
+      <div class="quick-row" id="quickRow" hidden>
+        <span class="qr-label">快改</span>
+        <button class="qchip" data-tpl="改文字">改文字</button>
+        <button class="qchip" data-tpl="加节点">加节点</button>
+        <button class="qchip" data-tpl="删节点">删节点</button>
+        <button class="qchip" data-tpl="换配色">换配色</button>
+        <button class="qchip" data-tpl="加说明">加说明</button>
+        <span class="qr-dyn" id="quickDyn"></span>
+      </div>
+      <div class="composer-box">
+        <textarea id="input" rows="1" placeholder="例如：画一个电商下单到发货的流程图，包含库存校验和支付失败分支…"></textarea>
+        <div class="composer-actions">
+          <button class="send" id="btnSend" title="生成图表">
+            <svg viewBox="0 0 20 20" width="16" height="16"><path d="M3.5 10h13M11 4.5L16.5 10 11 15.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="send stop" id="btnStop" title="停止生成" hidden>
+            <svg viewBox="0 0 20 20" width="14" height="14"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="composer-foot">
+        <span class="composer-hint" id="composerHint">Enter 发送 · Shift+Enter 换行</span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical"></div>
+
+  <!-- ── 画布区 ── -->
+  <section class="canvas-area">
+    <div class="canvas-bar">
+      <div class="canvas-bar-left">
+        <span class="canvas-label" id="canvasTitle">画布</span>
+        <div class="view-toggle" id="viewToggle" role="tablist" title="预览=离线秒开可直出；精修=在 draw.io 中编辑">
+          <button class="vt active" data-mode="preview" role="tab">预览</button>
+          <button class="vt" data-mode="editor" role="tab">精修</button>
+        </div>
+        <span class="divider"></span>
+        <button class="icon-btn sm" data-act="undo" title="撤销 (Ctrl+Z)"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M6.5 7.5H12a4 4 0 010 8H7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M9 4.5L6 7.5l3 3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="icon-btn sm" data-act="redo" title="重做 (Ctrl+Y)"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M13.5 7.5H8a4 4 0 000 8h5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M11 4.5l3 3-3 3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <span class="divider"></span>
+        <button class="icon-btn sm" data-act="zoomOut" title="缩小"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 10h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn sm" data-act="resetView" title="实际大小">100%</button>
+        <button class="icon-btn sm" data-act="zoomIn" title="放大"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 5.5v9M5.5 10h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn sm" data-act="fit" title="适应窗口"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M3.5 7V3.5H7M13 3.5h3.5V7M16.5 13v3.5H13M7 16.5H3.5V13" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn sm" id="btnSaveTpl" title="把当前图存入模板库，沉淀为可复用模板">⭐</button>
+      </div>
+      <div class="canvas-bar-right">
+        <span class="type-detect" id="typeDetect" hidden>
+          <span class="td-ico" aria-hidden="true">
+            <svg viewBox="0 0 20 20" width="13" height="13"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 13.5L17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+          <span id="typeDetectLabel">识别中…</span>
+        </span>
+        <span class="stat" id="statVertices" title="图形数量"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="6.5" width="13" height="8" rx="2"/><path d="M6.5 6.5V5a3.5 3.5 0 017 0v1.5" stroke-linecap="round"/></svg><b>0</b></span>
+        <span class="stat" id="statEdges" title="连线数量"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4.5 10h11M13 6.5l3.5 3.5L13 13.5" stroke-linecap="round" stroke-linejoin="round"/></svg><b>0</b></span>
+        <span class="iso-pill" id="isoPill" hidden></span>
+        <span class="style-pill" id="stylePill" hidden></span>
+        <span class="layout-pill" id="layoutPill" hidden></span>
+        <span class="fix-pill" id="fixPill" hidden></span>
+        <span class="valid-pill" id="validPill">等待生成</span>
+        <span class="live-pill" id="livePill" hidden title="正在实时同步到分享链接"><span class="live-dot"></span><span id="livePillText">实时同步</span></span>
+        <span class="divider"></span>
+        <button class="icon-btn sm" id="btnAnnotate" title="添加批注：开启后点选画布落点">
+          <svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 2.5c2.6 0 4.5 2 4.5 4.4 0 1.5-.7 2.8-1.7 3.9L10 16l-2.8-5.2C6.2 9.7 5.5 8.4 5.5 6.9 5.5 4.5 7.4 2.5 10 2.5z" fill="currentColor" stroke="none"/><circle cx="10" cy="7" r="1.7" fill="var(--paper)"/></svg>
+        </button>
+        <button class="icon-btn sm cmt-btn" id="btnComments" title="评论批注列表">
+          <svg viewBox="0 0 20 20" width="15" height="15"><path d="M3.5 5.5h13c.9 0 1.6.7 1.6 1.6v6.3c0 .9-.7 1.6-1.6 1.6H9l-3.4 3v-3H3.5c-.9 0-1.6-.7-1.6-1.6V7.1c0-.9.7-1.6 1.6-1.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <span class="cmt-badge" id="cmtBadge" hidden>0</span>
+        </button>
+        <button class="icon-btn sm" id="btnShapes" title="专业图形库：插入云架构图标">
+          <svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 3l2.2 4.5 5 .7-3.6 3.5.9 5L10 14.7 5.5 16.7l.9-5L2.8 8.2l5-.7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="canvas-stage mode-preview" id="canvasStage">
+      <!-- 离线预览层（默认，不依赖任何外部站点） -->
+      <div class="preview-wrap" id="previewWrap"></div>
+      <div class="preview-empty" id="previewEmpty">
+        <div class="pe-head">
+          <span class="pe-ico">
+            <svg viewBox="0 0 48 48" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6">
+              <rect x="6" y="12" width="14" height="10" rx="2.4"/>
+              <rect x="28" y="28" width="14" height="10" rx="2.4"/>
+              <path d="M13 22v8h15v-2"/>
+              <circle cx="13" cy="30" r="2.4" fill="currentColor" stroke="none"/>
+            </svg>
+          </span>
+          <div class="pe-head-text">
+            <h3>用一句话，画出专业图表</h3>
+            <p>描述需求，AI 即时生成可继续编辑的流程图、架构图或思维导图——离线预览、随时导出。</p>
+          </div>
+        </div>
+
+        <div class="ex-grid" id="exGrid">
+          <button class="ex-card" data-key="flowchart" data-label="流程图">
+            <span class="ex-ico">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="4" width="8" height="6" rx="1.6"/><path d="M7.5 10v3.2c0 1.2 1 2 2.2 2H15l-2-2m2 2l-2 2"/><path d="M14.5 4h6v6h-6z" stroke-dasharray="2 2"/></svg>
+            </span>
+            <span class="ex-title">流程图</span>
+            <span class="ex-desc">登录鉴权流程 · 含判断分支与异常路径</span>
+            <span class="ex-go">一键载入 →</span>
+          </button>
+          <button class="ex-card" data-key="architecture" data-label="架构图">
+            <span class="ex-ico">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4-8 4-8-4 8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
+            </span>
+            <span class="ex-title">架构图</span>
+            <span class="ex-desc">五层分层架构 · 泳道容器可整体拖动</span>
+            <span class="ex-go">一键载入 →</span>
+          </button>
+          <button class="ex-card" data-key="mindmap" data-label="思维导图">
+            <span class="ex-ico">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="2.4"/><path d="M12 12L5 7M12 12l7-5M12 12l-7 5M12 12l7 5"/></svg>
+            </span>
+            <span class="ex-title">思维导图</span>
+            <span class="ex-desc">产品增长策略 · 左右对称辐射</span>
+            <span class="ex-go">一键载入 →</span>
+          </button>
+        </div>
+
+        <div class="ex-ai">
+          <span class="ex-ai-label">或让 AI 直接生成：</span>
+          <button class="ex-ai-chip" data-prompt="画一个用户从下单到收货的时序图，包含购物车、订单、库存、支付、物流服务，标注关键消息">时序图</button>
+          <button class="ex-ai-chip" data-prompt="设计一个电商系统的 ER 图，包含用户、订单、商品、地址等实体，并标注主外键关系">ER 图</button>
+          <button class="ex-ai-chip" data-prompt="画一张产品增长思维导图，覆盖获客、转化、留存、变现四大方向与其关键动作">增长脑图</button>
+        </div>
+
+        <button class="ex-more" id="exMore">浏览全部模板 →</button>
+      </div>
+
+      <!-- 精修层（仅在「精修」模式下懒加载外部编辑器） -->
+      <iframe id="drawio" title="draw.io 编辑器" allow="clipboard-read; clipboard-write"></iframe>
+
+      <div class="stage-overlay" id="stageBoot">
+        <div class="boot-card">
+          <div class="boot-loader" aria-hidden="true">
+            <span class="bl-ring"></span>
+            <span class="bl-orbit">
+              <span class="bl-dot bl-dot-1"></span>
+              <span class="bl-dot bl-dot-2"></span>
+              <span class="bl-dot bl-dot-3"></span>
+            </span>
+            <span class="bl-core"></span>
+          </div>
+          <div class="boot-title">Diagram Atelier</div>
+          <p class="boot-sub" id="bootSub">正在装载 draw.io 编辑器内核…</p>
+        </div>
+      </div>
+
+      <div class="stage-overlay" id="stageError" hidden>
+        <div class="boot-card error">
+          <div class="boot-ico">!</div>
+          <h3>编辑器内核加载较慢</h3>
+          <p>本工具基于 draw.io 官方编辑器内核（<code>embed.diagrams.net</code>）。若你的网络访问该站点较慢或不可达，画布会一直停留在加载状态。请确认网络后重试；如长期无法访问，可改为自托管 draw.io。</p>
+          <button class="btn primary" id="btnRetryEditor">重新加载</button>
+        </div>
+      </div>
+
+      <!-- 实时协作浮层：在线成员 + 远端光标（fixed 定位，覆盖画布） -->
+      <div class="collab-layer" id="collabLayer" hidden>
+        <div class="collab-presence" id="collabPresence"></div>
+        <div class="collab-cursors" id="collabCursors"></div>
+      </div>
+
+      <!-- 版本历史抽屉 -->
+      <div class="side-drawer" id="historyDrawer" role="dialog" aria-modal="true" aria-label="版本历史" hidden>
+        <div class="drawer-head">
+          <h3>版本历史</h3>
+          <button class="icon-btn" data-close="historyDrawer"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="drawer-body" id="historyList"></div>
+      </div>
+
+      <!-- 模板抽屉 -->
+      <div class="side-drawer" id="templateDrawer" role="dialog" aria-modal="true" aria-label="模板库" hidden>
+        <div class="drawer-head">
+          <h3>模板库</h3>
+          <button class="icon-btn" data-close="templateDrawer"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="tpl-tabs" id="tplTabs">
+          <button class="tpl-tab active" data-tab="mine">我的模板</button>
+          <button class="tpl-tab" data-tab="community">社区</button>
+          <button class="tpl-tab" data-tab="samples">示例</button>
+        </div>
+        <div class="drawer-body" id="templateList"></div>
+      </div>
+
+      <!-- 评论批注抽屉 -->
+      <div class="side-drawer" id="commentsDrawer" role="dialog" aria-modal="true" aria-label="评论批注" hidden>
+        <div class="drawer-head">
+          <h3>评论批注</h3>
+          <button class="icon-btn" data-close="commentsDrawer"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="drawer-body" id="commentsList"></div>
+      </div>
+
+      <!-- 专业图形库抽屉 -->
+      <div class="side-drawer" id="shapesDrawer" role="dialog" aria-modal="true" aria-label="专业图形库" hidden>
+        <div class="drawer-head">
+          <h3>专业图形库</h3>
+          <button class="icon-btn" id="btnShapeUpload" type="button" title="上传自定义图标" aria-label="上传自定义图标"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+          <input class="shapes-search" id="shapesSearch" type="search" placeholder="搜索图标：云 / 数据库 / K8s …" />
+          <button class="icon-btn" data-close="shapesDrawer"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="drawer-body shapes-body" id="shapesGrid"></div>
+      </div>
+
+      <!-- 上传自定义图标弹窗 -->
+      <div class="modal" id="shapeUploadModal" role="dialog" aria-modal="true" aria-label="上传自定义图标" hidden>
+        <div class="modal-card upload-card">
+          <div class="modal-head">
+            <h3>上传自定义图标</h3>
+            <button class="icon-btn" data-close="shapeUploadModal" aria-label="关闭"><svg viewBox="0 0 20 20" width="15" height="15"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+          </div>
+          <div class="modal-body upload-body">
+            <div class="upload-row">
+              <label class="btn ghost sm" for="shapeFile">选择 SVG 文件…</label>
+              <input id="shapeFile" type="file" accept=".svg,image/svg+xml" hidden />
+              <span class="upload-hint">或把 SVG 代码粘贴到下方 ↓</span>
+            </div>
+            <textarea id="shapeSvgInput" class="upload-svg" placeholder="<svg viewBox='0 0 24 24' ...>...</svg>" spellcheck="false"></textarea>
+            <div class="upload-row">
+              <input id="shapeName" class="shapes-search" type="text" placeholder="图标名称（如：支付网关）" style="margin:0" />
+            </div>
+            <div class="upload-preview-wrap">
+              <span class="upload-preview-label">预览</span>
+              <div id="shapePreview" class="upload-preview"><span class="muted">尚未加载图标</span></div>
+            </div>
+            <p id="shapeUploadErr" class="upload-err" hidden></p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn ghost" data-close="shapeUploadModal">取消</button>
+            <button class="btn primary" id="btnShapeSave" type="button">保存入库</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ══════════════════ 模型设置抽屉 ══════════════════ -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="settings" id="settings" role="dialog" aria-modal="true" aria-label="模型配置" hidden>
+  <!-- 左侧：多配置列表 -->
+  <aside class="cfg-side" id="cfgSide">
+    <div class="cfg-side-head">
+      <span>模型配置</span>
+      <button class="icon-btn sm" id="btnAddCfg" title="新增一套配置">+</button>
+    </div>
+    <div class="cfg-list" id="cfgList"></div>
+    <div class="cfg-side-tip">点击切换 · ＋ 新增 · × 删除</div>
+  </aside>
+
+  <!-- 右侧：当前配置表单 -->
+  <div class="settings-main">
+    <div class="settings-head">
+      <div>
+        <h2>大模型配置</h2>
+        <p>密钥仅保存在本机浏览器，请求时由本地服务转发到你指定的端点</p>
+      </div>
+      <button class="icon-btn" id="btnCloseSettings"><svg viewBox="0 0 20 20" width="16" height="16"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    </div>
+
+    <div class="settings-body">
+      <div class="field">
+        <label for="cfgName">配置名称</label>
+        <input id="cfgName" type="text" spellcheck="false" placeholder="例如：DeepSeek / GPT-4o / 本地 Ollama" />
+      </div>
+
+      <div class="field">
+        <label>服务商预设</label>
+        <div class="preset-grid" id="presetGrid"></div>
+      </div>
+
+      <div class="field">
+        <label>接口协议</label>
+        <div class="seg" id="protoSeg">
+          <button data-proto="openai" class="active">OpenAI 兼容</button>
+          <button data-proto="anthropic">Anthropic Messages</button>
+        </div>
+        <small class="tip">国内主流服务商（DeepSeek / Kimi / 通义 / 智谱 / 硅基流动）均走 OpenAI 兼容协议。</small>
+      </div>
+
+      <div class="field">
+        <label for="cfgBase">API Base URL <b>*</b></label>
+        <input id="cfgBase" type="text" spellcheck="false" placeholder="https://api.deepseek.com/v1" />
+      </div>
+
+      <div class="field">
+        <label for="cfgKey">API Key</label>
+        <div class="input-affix">
+          <input id="cfgKey" type="password" spellcheck="false" placeholder="sk-..." autocomplete="off" />
+          <button class="affix-btn" id="btnToggleKey" type="button">显示</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="cfgModel">模型名称 <b>*</b></label>
+        <input id="cfgModel" type="text" spellcheck="false" placeholder="deepseek-chat" list="modelList" />
+        <datalist id="modelList"></datalist>
+        <small class="tip" id="modelHint"></small>
+      </div>
+
+      <div class="field two">
+        <div>
+          <label for="cfgTemp">温度 <span class="num" id="tempVal">0.3</span></label>
+          <input id="cfgTemp" type="range" min="0" max="1" step="0.05" value="0.3" />
+          <small class="tip">图表生成建议 0.2–0.4，过高会破坏坐标规整性。</small>
+        </div>
+        <div>
+          <label for="cfgMaxTokens">最大输出 tokens</label>
+          <input id="cfgMaxTokens" type="number" min="1024" max="128000" step="1024" value="16000" />
+          <small class="tip">大图 XML 很长，建议 ≥ 8000。</small>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="cfgExtra">附加风格偏好（可选）</label>
+        <textarea id="cfgExtra" rows="3" placeholder="例如：所有图表使用中文标签；配色偏冷灰；节点圆角更大…"></textarea>
+      </div>
+
+      <div class="verify-row">
+        <button class="btn ghost" id="btnVerify">
+          <svg viewBox="0 0 20 20" width="15" height="15"><path d="M4 10.5l4 4 8-9" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          测试连接
+        </button>
+        <span class="verify-result" id="verifyResult"></span>
+      </div>
+    </div>
+
+    <div class="settings-divider"><span>数据与备份</span></div>
+    <div class="data-mgmt">
+      <p class="dm-desc">你的所有图表、对话、配置与版本都只保存在<strong>本机浏览器</strong>。建议定期备份，换设备或清缓存前务必导出。</p>
+      <div class="dm-actions">
+        <button class="btn ghost sm" id="btnBackup">
+          <svg viewBox="0 0 20 20" width="14" height="14"><path d="M10 3v9m0 0l-3.2-3.2M10 12l3.2-3.2M4 15.5h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+          导出备份
+        </button>
+        <button class="btn ghost sm" id="btnRestore">
+          <svg viewBox="0 0 20 20" width="14" height="14"><path d="M10 16V7m0 0L6.8 10.2M10 7l3.2 3.2M4 4.5h12" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+          从备份恢复
+        </button>
+      </div>
+      <div class="dm-danger">
+        <button class="btn ghost sm danger" id="btnWipe">清空全部本地数据</button>
+        <span class="dm-warn" id="dmWarn">将删除所有图表、对话与配置，不可恢复</span>
+      </div>
+    </div>
+
+    <div class="settings-foot">
+      <button class="btn ghost" id="btnClearCfg">清空当前配置</button>
+      <button class="btn primary" id="btnSaveCfg">保存配置</button>
+    </div>
+    <input type="file" id="backupFile" accept="application/json,.json" hidden />
+  </div>
+</aside>
+
+<!-- ══════════════════ XML 查看弹窗 ══════════════════ -->
+<div class="modal" id="xmlModal" role="dialog" aria-modal="true" aria-label="draw.io 兼容 XML" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>draw.io 兼容 XML <span class="mono-badge" id="xmlSize"></span></h3>
+      <div class="modal-actions">
+        <button class="btn ghost sm" id="btnCopyXml">复制</button>
+        <button class="btn ghost sm" id="btnDownloadXml">下载 .drawio</button>
+        <button class="icon-btn" id="btnCloseXml"><svg viewBox="0 0 20 20" width="16" height="16"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <pre class="xml-view" id="xmlView"></pre>
+  </div>
+</div>
+
+<!-- ════════════════ 命令面板（Cmd/Ctrl+K） ════════════════ -->
+<div class="modal palette" id="palette" role="dialog" aria-modal="true" aria-label="命令面板" hidden>
+  <div class="palette-box">
+    <input id="paletteInput" class="palette-input" placeholder="输入命令或搜索，如：导出 PNG、切换主题、撤销…" autocomplete="off" spellcheck="false" />
+    <div class="palette-list" id="paletteList"></div>
+    <div class="palette-foot"><span>↑↓ 选择 · Enter 执行 · Esc 关闭</span></div>
+  </div>
+</div>
+
+<!-- ════════════════ 版本对比 ════════════════ -->
+<div class="modal" id="diffModal" role="dialog" aria-modal="true" aria-label="版本对比" hidden>
+  <div class="modal-card diff-card">
+    <div class="modal-head">
+      <h3>版本对比 <span class="mono-badge" id="diffTitle"></span></h3>
+      <div class="modal-actions">
+        <button class="icon-btn" id="btnCloseDiff"><svg viewBox="0 0 20 20" width="16" height="16"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <div class="diff-grid" id="diffView"></div>
+  </div>
+</div>
+
+<!-- ════════════════ 分享弹窗 ════════════════ -->
+<div class="modal" id="shareModal" role="dialog" aria-modal="true" aria-label="分享只读链接" hidden>
+  <div class="modal-card share-card">
+    <div class="modal-head">
+      <h3>分享只读链接</h3>
+      <div class="modal-actions">
+        <button class="icon-btn" id="btnCloseShare"><svg viewBox="0 0 20 20" width="16" height="16"><path d="M5.5 5.5l9 9M14.5 5.5l-9 9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <div class="share-body">
+      <p class="share-tip">链接已生成并复制，任何人打开即可<strong>只读查看</strong>这张图。转发给别人即可协作评审或留档。</p>
+      <div class="share-row">
+        <input id="shareLink" class="share-input" readonly spellcheck="false" />
+        <button class="btn primary sm" id="btnCopyShare">复制</button>
+      </div>
+      <div class="share-actions">
+        <button class="btn ghost sm" id="btnOpenShare">打开只读视图 ↗</button>
+        <button class="btn ghost sm" id="btnOpenEditShare">在新窗口编辑副本</button>
+        <button class="btn ghost sm" id="btnSaveTplFromShare">保存为模板</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="./shapes.js"></script>
+<script src="./semantic.js"></script>
+<script src="./render.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

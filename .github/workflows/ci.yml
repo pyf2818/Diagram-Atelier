@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+
+# 项目零运行时依赖：无需 npm install / npm ci，直接 node 跑测试。
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Smoke + Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax check all source JS
+        run: |
+          fail=0
+          for f in server.js lib/*.js public/*.js test/*.mjs; do
+            if [ -f "$f" ]; then
+              node --check "$f" || { echo "SYNTAX FAIL: $f"; fail=1; }
+            fi
+          done
+          exit $fail
+
+      - name: Run smoke + unit tests
+        run: npm test
