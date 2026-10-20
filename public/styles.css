@@ -218,8 +218,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 10.5px; font-weight: 700; letter-spacing: .8px; color: var(--muted);
 }
 .menu-group:first-child { border-top: 0; margin-top: 0; padding-top: 4px; }
-/* 精修模式下 draw.io 自带撤销 / 缩放工具，隐藏画布条里的重复控件 */
-.canvas-stage.mode-editor .canvas-tools { display: none; }
+/* 精修模式：draw.io 工具栏自带撤销/重做，隐藏画布条的重复按钮；缩放组保留（embed 窄幅下自带按钮会被收纳） */
+.canvas-stage.mode-editor .canvas-hist { display: none; }
 .dropdown-menu button {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   padding: 9px 11px; border-radius: var(--r-xs);
