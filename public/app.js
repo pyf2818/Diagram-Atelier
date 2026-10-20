@@ -654,17 +654,27 @@ function pushAssistantMsg() {
   autoScroll();
   return el.querySelector('.bubble');
 }
-function appendFinal(bubble, md) {
+/* 历史区折叠：基于当前图修改的长说明收成摘要行，点开看全文 */
+function foldedAssistantHtml(bubble, md) {
+  const text = md || '';
+  if (bubble.dataset.edited === '1' && text.length > 140 && text.indexOf('```') < 0) {
+    return '<details class="ai-fold"><summary>已按需求修改当前图 · 展开修改说明</summary>' +
+      renderMarkdown(text) + '</details>';
+  }
+  return renderMarkdown(text);
+}
+function appendFinal(bubble, md, opts) {
   // 已有思考块时保留它（折叠），只把最终内容写进正文区
   const parts = bubble.__parts;
+  const html = (opts && opts.fold) ? foldedAssistantHtml(bubble, md) : renderMarkdown(md || '');
   if (parts) {
     if (parts.thinkChars > 0) { parts.thinkBox.hidden = false; collapseThink(parts); }
     hideStageLine(parts);
-    parts.ans.innerHTML = renderMarkdown(md || '');
+    parts.ans.innerHTML = html;
     autoScroll();
     return;
   }
-  bubble.innerHTML = renderMarkdown(md || '');
+  bubble.innerHTML = html;
   autoScroll();
 }
 /* 未配置模型时的兜底引导：给新用户两条立刻可走的路（看示例 / 去配置） */
@@ -1085,7 +1095,7 @@ function rebuildMessages(history) {
   if (!history || !history.length) { addEmptyState(); return; }
   history.forEach((h) => {
     if (h.role === 'user') pushUserMsg(h.content);
-    else if (h.role === 'assistant') { const b = pushAssistantMsg(); appendFinal(b, h.content || ''); }
+    else if (h.role === 'assistant') { const b = pushAssistantMsg(); appendFinal(b, h.content || '', { fold: true }); }
   });
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }

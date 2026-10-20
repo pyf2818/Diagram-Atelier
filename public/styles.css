@@ -106,23 +106,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* ════════════════ 顶栏 ════════════════ */
-.topbar {
-  height: var(--topbar-h);
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 0 20px;
-  background: linear-gradient(180deg, var(--paper-2), var(--paper));
-  border-bottom: 1px solid var(--line);
-  position: relative;
-  z-index: 30;
-}
-.topbar::after {
-  content: "";
-  position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--brass-soft), transparent);
-  opacity: .6;
-}
+.topbar { height: var(--topbar-h); display: flex; align-items: center; gap: 18px; padding: 0 20px; background: linear-gradient(180deg, var(--paper-2), var(--paper)); border-bottom: 1px solid var(--line); position: relative; z-index: 30; }
+.topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--brass-soft), transparent); opacity: .6; }
+.topbar-actions { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+.topbar-actions .model-pill { padding: 6px 12px 6px 10px; font-size: 12.5px; }
 
 .brand { display: flex; align-items: center; gap: 12px; min-width: max-content; }
 .brand-mark { display: grid; place-items: center; filter: drop-shadow(0 2px 4px rgba(36,49,79,.25)); }
@@ -137,7 +124,6 @@ input, textarea, select { font-family: inherit; color: inherit; }
   letter-spacing: .4px; margin-top: 1px;
 }
 
-.topbar-mid { flex: 1; display: flex; justify-content: center; }
 .model-pill {
   display: inline-flex; align-items: center; gap: 9px;
   padding: 7px 14px 7px 12px;
@@ -159,8 +145,6 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .model-pill.ready .dot { background: var(--good); box-shadow: 0 0 0 3px rgba(79,157,105,.18); }
 .model-pill .model-name { font-weight: 500; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-pill .chev { color: var(--muted); }
-
-.topbar-actions { display: flex; align-items: center; gap: 9px; }
 
 /* 自动保存指示 */
 .save-ind {
@@ -228,6 +212,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   z-index: 40;
 }
 .dropdown.open .dropdown-menu { display: flex; animation: pop .14s ease; }
+.dropdown.open > button { border-color: var(--brass); color: var(--ink); background: var(--brass-soft); }
+.menu-group {
+  padding: 7px 10px 2px; margin-top: 3px; border-top: 1px solid var(--line);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .8px; color: var(--muted);
+}
+.menu-group:first-child { border-top: 0; margin-top: 0; padding-top: 4px; }
+/* 精修模式下 draw.io 自带撤销 / 缩放工具，隐藏画布条里的重复控件 */
+.canvas-stage.mode-editor .canvas-tools { display: none; }
 .dropdown-menu button {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
   padding: 9px 11px; border-radius: var(--r-xs);
@@ -1327,6 +1319,19 @@ input[type="range"] { width: 100%; accent-color: var(--brass); height: 22px; }
   animation: rise .2s ease;
 }
 .edit-mode b { color: var(--ink); }
+
+/* 「已基于当前图修改」回复的长说明折叠 */
+.ai-fold { margin: 2px 0; }
+.ai-fold summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: var(--r-pill);
+  font-size: 12px; color: var(--ink-soft); background: var(--card);
+  border: 1px dashed var(--line-2); cursor: pointer; user-select: none;
+  transition: border-color .15s, color .15s;
+}
+.ai-fold summary::before { content: "✦"; color: var(--brass); font-size: 11px; }
+.ai-fold summary:hover { border-color: var(--brass); color: var(--ink); }
+.ai-fold[open] summary { margin-bottom: 6px; }
 .em-dot {
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--good); box-shadow: 0 0 0 2px rgba(79,157,105,.18);
