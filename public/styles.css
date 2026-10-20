@@ -407,9 +407,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .empty-state .es-examples button:hover { border-color: var(--brass); color: var(--ink); transform: translateX(2px); }
 
-/* 输入区 */
+/* 输入区（通栏贴边：输入框占满面板宽度） */
 .composer {
-  padding: 10px 10px 12px;
+  padding: 10px 0 12px;
   border-top: 1px solid var(--line);
   background: linear-gradient(0deg, var(--paper-2), transparent);
 }
@@ -417,10 +417,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; align-items: flex-end; gap: 8px;
   background: var(--card);
   border: 1px solid var(--line-2);
-  border-radius: var(--r);
+  border-left: none; border-right: none;
+  border-radius: 0;
   box-shadow: var(--shadow-sm);
   transition: border-color .18s, box-shadow .18s;
-  padding: 6px 6px 5px;
+  padding: 8px 10px 6px 14px;
 }
 .composer-box:focus-within { border-color: var(--brass); box-shadow: 0 0 0 3px rgba(201,169,97,.16); }
 #input {
@@ -431,7 +432,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 #input::placeholder { color: var(--faint); }
 .composer-actions { flex: none; display: flex; align-items: center; gap: 6px; }
-.composer-foot { padding: 4px 2px 0; }
+.composer-foot { padding: 4px 14px 0; }
 .composer-hint { font-size: 11px; color: var(--faint); }
 .qchip {
   padding: 4px 9px; border-radius: var(--r-pill);
@@ -1312,13 +1313,14 @@ input[type="range"] { width: 100%; accent-color: var(--brass); height: 22px; }
 /* ════════════════ 编辑模式徽标 + 动态快改 ════════════════ */
 .edit-mode {
   display: flex; align-items: center; gap: 7px;
-  margin: 0 2px 7px; padding: 5px 10px;
+  margin: 0 14px 7px; padding: 5px 10px;
   border-radius: var(--r-pill);
   background: var(--brass-soft); border: 1px solid var(--brass);
   font-size: 11px; line-height: 1.4; color: var(--brass-deep);
   animation: rise .2s ease;
 }
 .edit-mode b { color: var(--ink); }
+[data-theme="dark"] .edit-mode b { color: var(--ink-text); }
 
 /* 「已基于当前图修改」回复的长说明折叠 */
 .ai-fold { margin: 2px 0; }
@@ -1545,6 +1547,19 @@ input[type="range"] { width: 100%; accent-color: var(--brass); height: 22px; }
 
 [data-theme="dark"] .icon-btn { color: var(--ink-2-text); }
 [data-theme="dark"] .icon-btn:hover { color: var(--ink-text); }
+/* 暗色顶栏提亮：品牌标题 / 幽灵按钮 / 配置 pill / 保存指示 / 画布统计与切换器 */
+[data-theme="dark"] .brand-text strong { color: var(--ink-text); }
+[data-theme="dark"] .brand-text em { color: var(--muted); }
+[data-theme="dark"] .btn.ghost { color: var(--text); }
+[data-theme="dark"] .btn.ghost:hover { color: var(--ink-text); }
+[data-theme="dark"] .model-pill { color: var(--ink-2-text); }
+[data-theme="dark"] .save-ind .si-text { color: var(--muted); }
+[data-theme="dark"] .save-ind.saved .si-text { color: var(--text); }
+[data-theme="dark"] .canvas-bar .stat { color: var(--ink-2-text); }
+[data-theme="dark"] .view-toggle .vt { color: var(--ink-2-text); }
+[data-theme="dark"] .view-toggle .vt:hover { color: var(--ink-text); }
+[data-theme="dark"] .composer-hint { color: var(--muted); }
+[data-theme="dark"] #input::placeholder { color: var(--muted); }
 [data-theme="dark"] .pe-chip { color: var(--ink-2-text); }
 [data-theme="dark"] .pe-chip:hover { color: var(--ink-text); }
 [data-theme="dark"] .empty-state .es-examples button { color: var(--ink-2-text); }
