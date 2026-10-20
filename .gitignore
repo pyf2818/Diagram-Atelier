@@ -15,3 +15,8 @@ verify_render.js
 # ── 系统 ──
 .DS_Store
 Thumbs.db
+
+# ── Agent 工作区（勿提交）──
+.monkeycode/
+.monkeycode-tmp-files/
+_collab_result.json

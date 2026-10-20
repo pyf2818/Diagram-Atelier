@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/smoke.mjs && node test/mcp.mjs && node test/visio.mjs"
+    "test": "node test/smoke.mjs && node test/mcp.mjs && node test/visio.mjs && node test/vsdx-export.mjs && node test/collab.mjs && node test/live-share.mjs && node test/auth.mjs"
   },
   "engines": {
     "node": ">=18"

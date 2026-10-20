@@ -21,12 +21,14 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-const { PRESETS, streamChat, verify } = require('./lib/llm');
+const { PRESETS, streamChat, verify, fetchModels } = require('./lib/llm');
 const { buildMessages } = require('./lib/prompt');
 const { extractDiagramXml, extractJsonPatch, normalizeDrawioXml, validateXml, summarizeDiagram } = require('./lib/xml');
 const { SAMPLES } = require('./lib/samples');
 const { handleCollabUpgrade } = require('./lib/collab');
 const { vsdxToDrawio } = require('./lib/visio');
+const { drawioToVsdx } = require('./lib/vsdx-export');
+const { createAccounts } = require('./lib/accounts');
 
 const PORT = Number(process.env.PORT || 7391);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -51,7 +53,7 @@ const MIME = {
 /* 分享存储（内存 Map + 磁盘持久化，重启不丢链接）                       */
 /* ------------------------------------------------------------------ */
 
-const SHARE_DIR = path.join(__dirname, 'data');
+const SHARE_DIR = process.env.ATELIER_DATA_DIR || path.join(__dirname, 'data');
 const SHARE_FILE = path.join(SHARE_DIR, 'shares.json');
 const SHARE_MAX = 1000; // 单实例上限，超出按创建时间淘汰最旧
 
@@ -383,6 +385,38 @@ function renderShareNotFound() {
 }
 
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* 云端账号体系（自托管轻量版：注册/登录 + 服务端图存储）                  */
+/* ------------------------------------------------------------------ */
+
+const accounts = createAccounts({ dataDir: SHARE_DIR });
+
+const authAttempts = new Map(); // ip -> { count, resetAt }
+function authRateOk(ip) {
+  const now = Date.now();
+  const rec = authAttempts.get(ip);
+  if (!rec || now > rec.resetAt) {
+    authAttempts.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  rec.count++;
+  return rec.count <= 20;
+}
+
+function clientIp(req) {
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+function requireAuth(req, res) {
+  const user = accounts.authUser(req);
+  if (!user) {
+    sendJson(res, 401, { error: '未登录或登录已过期' });
+    return null;
+  }
+  return user;
+}
+
+/* ------------------------------------------------------------------ */
 /* 工具                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -530,12 +564,20 @@ async function handleChat(req, res) {
     const { text, usage } = await streamChat(
       cfg,
       messages,
-      (chunk) => {
+      (chunk, kind) => {
+        if (kind === 'think') {
+          // 思维链增量：单独事件类型，前端渲染为可折叠的「思考过程」块
+          sse(res, 'think', { t: chunk });
+          return;
+        }
         charCount += chunk.length;
         sse(res, 'delta', { t: chunk, n: charCount });
       },
       controller.signal
     );
+
+    // 流结束：进入服务端校验阶段（前端据此切换过程指示）
+    sse(res, 'stage', { k: 'validate', label: mode === 'patch' ? '解析增量指令' : '校验与自动修复' });
 
     // PATCH MODE：AI 返回 JSON patch，由前端合并到当前 XML
     if (mode === 'patch') {
@@ -659,6 +701,31 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // 从服务端拉取模型列表（规避浏览器 CORS），10s 超时
+    if (p === '/api/models' && req.method === 'POST') {
+      // 轻量归一化：拉取模型时 model 尚未确定，不能套用强制要求 model 的 normalizeLlmConfig
+      const raw = (await readBody(req)).llm || {};
+      const cfg = {
+        protocol: raw.protocol === 'anthropic' ? 'anthropic' : 'openai',
+        baseUrl: String(raw.baseUrl || process.env.LLM_BASE_URL || '').trim(),
+        apiKey: String(raw.apiKey || process.env.LLM_API_KEY || '').trim(),
+      };
+      if (!cfg.baseUrl) return sendJson(res, 400, { ok: false, error: '请先填写 API Base URL' });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+      try {
+        const info = await fetchModels(cfg, controller.signal);
+        return sendJson(res, 200, { ok: true, models: info.models, endpoint: info.endpoint });
+      } catch (err) {
+        return sendJson(res, 200, {
+          ok: false,
+          error: controller.signal.aborted ? '拉取超时（10s），请检查 Base URL' : err?.message || String(err),
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     if (p === '/api/normalize' && req.method === 'POST') {
       const body = await readBody(req);
       const input = String(body.xml || '');
@@ -692,10 +759,100 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    /* ── Visio 反向导出：draw.io XML -> .vsdx 二进制 ── */
+    if (p === '/api/export/visio' && req.method === 'POST') {
+      let body;
+      try {
+        body = await readBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+      const xml = String((body && body.xml) || '');
+      if (!xml.trim()) return sendJson(res, 400, { error: 'xml 不能为空' });
+      const out = drawioToVsdx(xml, { title: body && body.title });
+      if (out.error) return sendJson(res, 400, { error: out.error });
+      const filename = encodeURIComponent(((body && body.title) || 'diagram').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) + '.vsdx');
+      res.writeHead(200, {
+        'content-type': 'application/vnd.ms-visio.drawing',
+        'content-length': out.buffer.length,
+        'content-disposition': `attachment; filename="diagram.vsdx"; filename*=UTF-8''${filename}`,
+        'cache-control': 'no-store',
+      });
+      return res.end(out.buffer);
+    }
+
     if (p === '/api/validate' && req.method === 'POST') {
       const body = await readBody(req);
       const result = validateXml(String(body.xml || ''));
       return sendJson(res, 200, { ...result, summary: summarizeDiagram(String(body.xml || '')) });
+    }
+
+    /* ── 云端账号：注册 / 登录 / 会话 ── */
+    if ((p === '/api/auth/register' || p === '/api/auth/login') && req.method === 'POST') {
+      if (!authRateOk(clientIp(req))) return sendJson(res, 429, { error: '尝试过于频繁，请稍后再试' });
+      let body;
+      try {
+        body = await readBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+      const result = p.endsWith('/register') ? accounts.register(body || {}) : accounts.login(body || {});
+      if (result.error) return sendJson(res, 400, { error: result.error });
+      return sendJson(res, 200, { token: result.token, user: result.user });
+    }
+    if (p === '/api/auth/logout' && req.method === 'POST') {
+      return sendJson(res, 200, accounts.logout(req));
+    }
+    if (p === '/api/auth/me' && req.method === 'GET') {
+      const user = accounts.authUser(req);
+      if (!user) return sendJson(res, 401, { error: '未登录或登录已过期' });
+      return sendJson(res, 200, { user: accounts.publicUser(user) });
+    }
+
+    /* ── 云端图库：按用户隔离的图存储 ── */
+    if (p === '/api/diagrams' && req.method === 'GET') {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      return sendJson(res, 200, { list: accounts.listDiagrams(user) });
+    }
+    if (p === '/api/diagrams' && req.method === 'POST') {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      let body;
+      try {
+        body = await readBody(req);
+      } catch (err) {
+        return sendJson(res, 400, { error: err.message });
+      }
+      const result = accounts.saveDiagram(user, body || {});
+      if (result.error) return sendJson(res, 400, { error: result.error });
+      return sendJson(res, 200, result.entry);
+    }
+    if (p.startsWith('/api/diagrams/')) {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      const id = decodeURIComponent(p.slice('/api/diagrams/'.length).split('/')[0]);
+      if (req.method === 'GET') {
+        const entry = accounts.getDiagram(user, id);
+        if (!entry) return sendJson(res, 404, { error: '图表不存在或无权限' });
+        return sendJson(res, 200, entry);
+      }
+      if (req.method === 'PUT') {
+        let body;
+        try {
+          body = await readBody(req);
+        } catch (err) {
+          return sendJson(res, 400, { error: err.message });
+        }
+        const result = accounts.saveDiagram(user, { ...(body || {}), id });
+        if (result.error) return sendJson(res, 400, { error: result.error });
+        return sendJson(res, 200, result.entry);
+      }
+      if (req.method === 'DELETE') {
+        const okDel = accounts.deleteDiagram(user, id);
+        if (!okDel) return sendJson(res, 404, { error: '图表不存在或无权限' });
+        return sendJson(res, 200, { ok: true });
+      }
     }
 
     if (p === '/api/chat' && req.method === 'POST') {

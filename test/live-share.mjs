@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const PORT = 7395;
 const BASE = `http://127.0.0.1:${PORT}`;
-const NODE = 'C:/Users/anlan0725/.workbuddy/binaries/node/versions/22.22.2/node.exe';
+const NODE = process.execPath;
 const SAMPLE = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="2" value="A" style="atos:cloud" vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell><mxCell id="3" value="B" style="atos:data" vertex="1" parent="1"><mxGeometry x="240" y="40" width="120" height="60" as="geometry"/></mxCell><mxCell id="4" style="edgeStyle=orthogonalEdgeStyle" edge="1" parent="1" source="2" target="3"><mxGeometry relative="1" as="geometry"/></mxCell></root></mxGraphModel>';
 const UPDATED = SAMPLE.replace('value="A"', 'value="A-updated"').replace('value="B"', 'value="B-updated"');
 

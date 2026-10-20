@@ -13,6 +13,7 @@ const API = {
   presets: '/api/presets',
   samples: '/api/samples',
   verify: '/api/verify',
+  models: '/api/models',
   chat: '/api/chat',
   share: '/api/share',
 };
@@ -24,6 +25,7 @@ const LS = {
   conversations: 'atelier.conversations.v1',
   theme: 'atelier.theme.v1',
   templates: 'atelier.templates.v1',
+  diagrams: 'atelier.diagrams.v1',
   sidebarCollapsed: 'atelier.sidebarCollapsed.v1',
 };
 const TYPE_EXTRA = {
@@ -62,6 +64,8 @@ let lastSentHadXml = false;
 
 /* 视图模式：preview=离线原生 SVG；editor=draw.io 精修 */
 let viewMode = 'preview';
+let pendingXmlSync = false;   // 等待编辑器回传 XML（切回预览的兜底同步）
+let xmlSyncWatchdog = null;
 let editorBooted = false;
 let previewSvg = null;
 let previewBBox = null;
@@ -74,15 +78,16 @@ let previewWired = false;
 let drawio, messagesEl, input, btnSend, btnStop, modelPill, modelName, modelDot,
     toasts, stageBoot, stageError, splitter, canvasTitle, statV, statE, validPill,
     typeDetect, typeDetectLabel, isoPill, stylePill, layoutPill, fixPill,
-    typeStrip, settingsEl, scrim, presetGrid, protoSeg, cfgBase, cfgKey, btnToggleKey,
+    settingsEl, scrim, presetGrid, protoSeg, cfgBase, cfgKey, btnToggleKey,
     cfgModel, modelList, modelHint, cfgTemp, tempVal, cfgMaxTokens, cfgExtra,
-    btnVerify, verifyResult, historyDrawer, historyList, templateDrawer, templateList, tplTabs,
+    btnVerify, btnFetchModels, verifyResult, historyDrawer, historyList, templateDrawer, templateList, tplTabs,
     collabLayer, collabPresence, collabCursors, btnCollab,
     exportWrap, exportMenu, xmlModal, xmlView, xmlSize, agentPanel, bootSub,
-    previewWrap, previewEmpty, viewToggle, canvasStage, quickRow,
+    previewWrap, previewEmpty, viewToggle, canvasStage,
     btnTheme, convDrawer, convList, btnConvs, cfgList, btnAddCfg, cfgName,
-    quickDyn, editMode, paletteEl, paletteInput, paletteList, diffModal, diffView, diffTitle, btnCloseDiff, btnTypeToggle,
-    saveInd, saveText, backupFile, btnBackup, btnRestore, btnWipe, dmWarn, btnToggleSidebar;
+    editMode, paletteEl, paletteInput, paletteList, diffModal, diffView, diffTitle, btnCloseDiff,
+    saveInd, saveText, backupFile, btnBackup, btnRestore, btnWipe, dmWarn, btnToggleSidebar,
+    moreWrap, btnMore, btnMyDiagrams, libDrawer, libList, libName, btnLibSave;
 
 /* ─── 小工具 ─── */
 const $ = (id) => document.getElementById(id);
@@ -304,6 +309,7 @@ function selectPreset(id) {
     c.classList.toggle('active', c.dataset.id === id));
   applyCfgToForm();
 }
+let fetchedModels = []; // 「拉取」按钮从服务端拉到的模型列表（与预设模型合并进 datalist）
 function applyCfgToForm() {
   cfgBase.value = cfg.baseUrl || '';
   cfgKey.value = cfg.apiKey || '';
@@ -318,7 +324,10 @@ function applyCfgToForm() {
   if (modelList) {
     modelList.innerHTML = '';
     const p = presets.find((x) => x.id === cfg.preset);
-    (p && p.models ? p.models : []).forEach((m) => {
+    const seen = new Set();
+    [...(p && p.models ? p.models : []), ...fetchedModels].forEach((m) => {
+      if (seen.has(m)) return;
+      seen.add(m);
       const o = document.createElement('option'); o.value = m; modelList.appendChild(o);
     });
   }
@@ -367,6 +376,39 @@ function wireSettings() {
     toast('已清空模型配置', 'brass');
   });
   btnVerify.addEventListener('click', verifyConfig);
+  if (btnFetchModels) btnFetchModels.addEventListener('click', fetchModelList);
+}
+/* 拉取当前端点的可用模型列表，填入 datalist 供下拉选择 */
+async function fetchModelList() {
+  const baseUrl = String(cfgBase.value || '').trim();
+  if (!baseUrl) { toast('请先填写 API Base URL', 'brass'); cfgBase.focus(); return; }
+  btnFetchModels.disabled = true;
+  btnFetchModels.textContent = '拉取中…';
+  try {
+    const resp = await fetch(API.models, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        protocol: cfg.protocol === 'anthropic' ? 'anthropic' : 'openai',
+        baseUrl,
+        apiKey: String(cfgKey.value || '').trim(),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'HTTP ' + resp.status);
+    fetchedModels = data.models || [];
+    applyCfgToForm(); // 重新合并预设 + 拉取列表（会重置 hint，故在其后再写提示）
+    modelHint.textContent = fetchedModels.length
+      ? '已拉取 ' + fetchedModels.length + ' 个模型，点击输入框即可下拉选择'
+      : '端点已连通，但未返回任何模型，可手动输入模型名';
+    toast(fetchedModels.length ? '已拉取 ' + fetchedModels.length + ' 个模型' : '端点未返回模型列表', fetchedModels.length ? 'ok' : 'brass');
+  } catch (err) {
+    modelHint.textContent = '拉取失败：' + (err.message || '网络错误');
+    toast('模型列表拉取失败：' + (err.message || '网络错误'), 'err');
+  } finally {
+    btnFetchModels.disabled = false;
+    btnFetchModels.textContent = '拉取';
+  }
 }
 function markPresetNone() {
   qa('.preset-chip', presetGrid).forEach((c) => c.classList.remove('active'));
@@ -596,7 +638,7 @@ function removeEmptyState() {
 function pushUserMsg(text) {
   const el = document.createElement('div');
   el.className = 'msg user';
-  el.innerHTML = `<div class="bubble"></div><div class="avatar">你</div>`;
+  el.innerHTML = `<div class="bubble"></div>`;
   el.querySelector('.bubble').textContent = text;
   el.appendChild(buildMsgActions('user', text, el));
   messagesEl.appendChild(el);
@@ -613,7 +655,46 @@ function pushAssistantMsg() {
   return el.querySelector('.bubble');
 }
 function appendFinal(bubble, md) {
+  // 已有思考块时保留它（折叠），只把最终内容写进正文区
+  const parts = bubble.__parts;
+  if (parts) {
+    if (parts.thinkChars > 0) { parts.thinkBox.hidden = false; collapseThink(parts); }
+    hideStageLine(parts);
+    parts.ans.innerHTML = renderMarkdown(md || '');
+    autoScroll();
+    return;
+  }
   bubble.innerHTML = renderMarkdown(md || '');
+  autoScroll();
+}
+/* 未配置模型时的兜底引导：给新用户两条立刻可走的路（看示例 / 去配置） */
+function pushNoConfigGuide() {
+  removeEmptyState();
+  // 同一时刻只保留一条引导消息，避免连续多次发送后堆叠
+  const old = messagesEl.querySelector('.msg.guide');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.className = 'msg assistant guide';
+  el.innerHTML = `<div class="avatar">AI</div><div class="bubble"></div>`;
+  const bubble = el.querySelector('.bubble');
+  bubble.append('我还画不了——需要先配置一个可用的大模型。你可以：');
+  const row = document.createElement('div');
+  row.className = 'guide-actions';
+  const bSample = document.createElement('button');
+  bSample.className = 'qchip';
+  bSample.textContent = '先看内置示例（无需配置）';
+  bSample.addEventListener('click', () => { closeSettings(); loadSample('flowchart', '流程图示例'); });
+  const bCfg = document.createElement('button');
+  bCfg.className = 'qchip';
+  bCfg.textContent = '去配置模型';
+  bCfg.addEventListener('click', openSettings);
+  row.append(bSample, bCfg);
+  bubble.appendChild(row);
+  const tip = document.createElement('div');
+  tip.className = 'guide-tip';
+  tip.textContent = '配置完成后，刚才输入的需求会留在输入框，点发送即可。';
+  bubble.appendChild(tip);
+  messagesEl.appendChild(el);
   autoScroll();
 }
 /* 在助手消息上标注「已编辑当前图」，让增量修改可见 */
@@ -634,14 +715,28 @@ function sendChat() {
   if (busy) return;
   const text = input.value.trim();
   if (!text) { input.focus(); return; }
-  if (!hasConfig()) { openSettings(); toast('请先在「模型设置」里配置大模型', 'brass'); return; }
+  if (!hasConfig()) {
+    openSettings();
+    pushNoConfigGuide();
+    toast('请先在「模型设置」里配置大模型', 'brass');
+    return;
+  }
   removeEmptyState();
   pushUserMsg(text);
   chatHistory.push({ role: 'user', content: text });
   if (conv) { conv.updatedAt = Date.now(); persistConversations(); renderConvList(); }
   input.value = ''; autoGrow();
-  inferTypeFromInput(); // 清空后移除输入期推断高亮
   streamCompletion(text);
+}
+/* 从用户描述推断图类型，供 buildExtra 注入排版约束（语义库不可用时回退 auto） */
+function detectTypeFromText(text) {
+  try {
+    if (window.DiagramSemantic) {
+      const r = window.DiagramSemantic.detectIntent(text || '');
+      if (r && r.type && r.type !== 'auto') return r.type;
+    }
+  } catch (_) {}
+  return 'auto';
 }
 function streamCompletion(text) {
   if (busy) return;
@@ -650,7 +745,7 @@ function streamCompletion(text) {
   const bubble = pushAssistantMsg();
   const editing = !!currentXml;          // 发送时若已有图，则本次为「基于当前图修改」
   bubble.dataset.edited = editing ? '1' : '';
-  const type = (qa('.chip.active', typeStrip)[0] || {}).dataset?.type || 'auto';
+  const type = detectTypeFromText(text);
   const body = {
     llm: buildLlmBody(),
     input: text,
@@ -707,7 +802,12 @@ function parseSse(raw) {
 }
 function dispatchSse(raw, bubble) {
   const { event, data } = parseSse(raw);
-  if (event === 'delta') {
+  if (event === 'think') {
+    streamThink(bubble, (data && data.t) || '');
+  } else if (event === 'stage') {
+    const parts = ensureStreamParts(bubble);
+    renderStageLine(parts, (data && data.label) || '');
+  } else if (event === 'delta') {
     streamText += (data && data.t) || '';
     if (!streamingFrozen) {
       const fence = streamText.indexOf('```');
@@ -722,14 +822,86 @@ function dispatchSse(raw, bubble) {
     toast((data && data.error) || '生成出错', 'err');
   }
 }
+/* ─── 流式过程展示：思维链（思考过程）+ 阶段指示 ─── */
+function ensureStreamParts(bubble) {
+  let parts = bubble.__parts;
+  if (!parts) {
+    bubble.innerHTML =
+      '<div class="think-box" data-collapsed="0" hidden>' +
+        '<button class="think-head" type="button" aria-expanded="true">' +
+          '<span class="think-dot"></span><span class="think-label">思考过程</span>' +
+          '<span class="think-meta"></span><span class="think-chev">▾</span>' +
+        '</button>' +
+        '<div class="think-body"></div>' +
+      '</div>' +
+      '<div class="stage-line" hidden></div>' +
+      '<div class="ans"></div>';
+    const head = bubble.querySelector('.think-head');
+    head.addEventListener('click', () => {
+      const box = bubble.querySelector('.think-box');
+      const open = box.dataset.collapsed === '1';
+      box.dataset.collapsed = open ? '0' : '1';
+      head.setAttribute('aria-expanded', String(open));
+    });
+    parts = {
+      thinkBox: bubble.querySelector('.think-box'),
+      thinkBody: bubble.querySelector('.think-body'),
+      thinkMeta: bubble.querySelector('.think-meta'),
+      stageLine: bubble.querySelector('.stage-line'),
+      ans: bubble.querySelector('.ans'),
+      thinkRaw: '',
+      thinkChars: 0,
+      thinkStart: 0,
+    };
+    bubble.__parts = parts;
+  }
+  return parts;
+}
+function streamThink(bubble, chunk) {
+  if (!chunk) return;
+  const parts = ensureStreamParts(bubble);
+  if (parts.thinkChars === 0) {
+    parts.thinkStart = Date.now();
+    parts.thinkBox.hidden = false;
+    parts.thinkBox.dataset.collapsed = '0';
+    renderStageLine(parts, '深度思考中…');
+  }
+  parts.thinkChars += chunk.length;
+  parts.thinkRaw += chunk;
+  // 防止超长思维链撑爆 DOM：只保留最近一段
+  if (parts.thinkRaw.length > 9000) parts.thinkRaw = parts.thinkRaw.slice(-8000);
+  parts.thinkBody.textContent = parts.thinkRaw;
+  parts.thinkBody.scrollTop = parts.thinkBody.scrollHeight;
+  autoScroll();
+}
+function collapseThink(parts) {
+  parts.thinkBox.dataset.collapsed = '1';
+  parts.thinkBox.querySelector('.think-head').setAttribute('aria-expanded', 'false');
+  if (parts.thinkChars > 0) {
+    const secs = Math.max(1, Math.round((Date.now() - parts.thinkStart) / 1000));
+    parts.thinkMeta.textContent = '已思考 ' + secs + ' 秒 · ' + parts.thinkChars + ' 字';
+  }
+}
+function renderStageLine(parts, label) {
+  if (!parts || !label) return;
+  parts.stageLine.hidden = false;
+  parts.stageLine.innerHTML = '<span class="stage-dot"></span>' + esc(label);
+}
+function hideStageLine(parts) {
+  if (parts) parts.stageLine.hidden = true;
+}
 function renderStream(bubble, frozen) {
+  const parts = ensureStreamParts(bubble);
+  // 正文开始输出：折叠思考块并标注耗时
+  if (parts.thinkChars > 0 && parts.thinkBox.dataset.collapsed === '0') collapseThink(parts);
+  renderStageLine(parts, frozen ? '正在排版图表…' : '生成图表中…');
   if (frozen) {
     const fence = streamText.indexOf('```');
     const intro = fence >= 0 ? streamText.slice(0, fence) : streamText;
-    bubble.innerHTML = renderMarkdown(intro) +
+    parts.ans.innerHTML = renderMarkdown(intro) +
       '<div class="typing"><i></i><i></i><i></i></div> <span style="color:var(--muted);font-size:12px">正在排版图表…</span>';
   } else {
-    bubble.innerHTML = renderMarkdown(streamText);
+    parts.ans.innerHTML = renderMarkdown(streamText);
     autoScroll();
   }
 }
@@ -737,7 +909,17 @@ function onDone(data, bubble) {
   if (!data) return;
   let reply = data.reply || (data.xml ? '图表已生成。' : '');
   const intro = streamText.indexOf('```') >= 0 ? streamText.slice(0, streamText.indexOf('```')) : streamText;
-  appendFinal(bubble, reply || intro);
+  const finalMd = reply || intro;
+  // 结束态：思考块折叠保留（可展开回看），阶段指示隐藏，正文写最终说明
+  const parts = bubble.__parts;
+  if (parts) {
+    if (parts.thinkChars > 0) { parts.thinkBox.hidden = false; collapseThink(parts); }
+    hideStageLine(parts);
+    parts.ans.innerHTML = renderMarkdown(finalMd);
+    autoScroll();
+  } else {
+    appendFinal(bubble, finalMd);
+  }
   chatHistory.push({ role: 'assistant', content: reply || '' });
   const editedHere = bubble.dataset.edited === '1';
   let finalXml = null;
@@ -865,7 +1047,6 @@ function newConversation() {
   currentXml = '';
   previewWrap.innerHTML = '';
   previewEmpty.hidden = false;
-  updateQuickRow();
   persistConversations(); renderConvList();
   toast('已开启新对话', 'ok');
 }
@@ -880,7 +1061,6 @@ function selectConversation(id) {
   if (currentXml) renderPreview(currentXml);
   else { previewWrap.innerHTML = ''; previewEmpty.hidden = false; }
   canvasTitle.textContent = c.name || '画布';
-  updateQuickRow();
   persistConversations(); renderConvList();
   closeAllDrawers();
   closeConvDrawer();
@@ -968,15 +1148,16 @@ function onEditorMessage(e) {
     case 'load':
     case 'autosave':
     case 'save':
-      if (typeof msg.xml === 'string') {
-        currentXml = msg.xml;
-        persistSession();
-        scheduleLiveSync(); // 精修模式改动也要实时同步到分享链接
-        // 实时协作：精修模式手动改图经编辑器回传，广播给协作者（remoteEchoUntil 抑制远端 doc 回环）
-        if (collab && collab.connected && Date.now() > remoteEchoUntil) collab.broadcastDoc(msg.xml);
-      }
+      applyEditorXml(msg.xml);
       break;
     case 'export':
+      // format=xml 的回包来自「切回预览」的兜底同步请求，避免与图片导出（msg.data）混淆
+      if (pendingXmlSync && msg.format === 'xml' && typeof msg.xml === 'string' && msg.xml) {
+        pendingXmlSync = false;
+        clearTimeout(xmlSyncWatchdog);
+        applyEditorXml(msg.xml);
+        break;
+      }
       onExport(msg);
       break;
     default:
@@ -985,9 +1166,33 @@ function onEditorMessage(e) {
 }
 function postLoad(xml) {
   if (drawio.contentWindow) {
+    // autosave 是 load 消息参数（非 URL 参数）：启用后编辑器每次改动都会回传 {event:'autosave', xml}
     drawio.contentWindow.postMessage(
-      JSON.stringify({ action: 'load', xml, title: 'Atelier', spin: 'load' }), '*');
+      JSON.stringify({ action: 'load', xml, title: 'Atelier', spin: 'load', autosave: 1 }), '*');
   }
+}
+/* 把编辑器回传的最新 XML 应用到全局状态（autosave / save / 切换兜底共用一条路径） */
+function applyEditorXml(xml) {
+  if (typeof xml !== 'string' || !xml) return;
+  currentXml = xml;
+  persistSession();
+  scheduleLiveSync(); // 精修模式改动也要实时同步到分享链接
+  // 实时协作：精修模式手动改图经编辑器回传，广播给协作者（remoteEchoUntil 抑制远端 doc 回环）
+  if (collab && collab.connected && Date.now() > remoteEchoUntil) collab.broadcastDoc(xml);
+  if (viewMode === 'preview') renderPreview(xml);
+}
+/* 切回预览时向编辑器索取当前图 XML（autosave 的双保险），带回包看门狗 */
+function requestEditorXml() {
+  if (!editorReady || !drawio.contentWindow) return false;
+  pendingXmlSync = true;
+  postToEditor({ action: 'export', format: 'xml' });
+  clearTimeout(xmlSyncWatchdog);
+  xmlSyncWatchdog = setTimeout(() => {
+    if (!pendingXmlSync) return;
+    pendingXmlSync = false;
+    if (viewMode === 'preview' && currentXml) renderPreview(currentXml);
+  }, 1500);
+  return true;
 }
 
 /* ─── 增量 patch 应用（对话即改图）─── */
@@ -1240,7 +1445,6 @@ function loadXml(xml) {
   }
   currentXml = xml;
   persistSession();
-  updateQuickRow();
   updateDiagramInsight();
   if (viewMode === 'editor') {
     if (!editorReady) { pendingXml = xml; return; }
@@ -1258,7 +1462,8 @@ function loadXml(xml) {
 }
 /* 预览模式撤销/重做（精修模式交由 draw.io 内核处理） */
 function doUndo() {
-  if (viewMode === 'editor') { postToEditor({ action: 'undo' }); return; }
+  /* embed 协议没有 undo/redo 顶层 action，须经 invokeAction 转发（见 drawio 官方文档） */
+  if (viewMode === 'editor') { postToEditor({ action: 'invokeAction', actionName: 'undo' }); return; }
   if (!xmlUndo.length) { toast('没有可撤销的操作', 'brass'); return; }
   xmlRedo.push(currentXml);
   const prev = xmlUndo.pop();
@@ -1266,7 +1471,7 @@ function doUndo() {
   toast('已撤销', 'ok');
 }
 function doRedo() {
-  if (viewMode === 'editor') { postToEditor({ action: 'redo' }); return; }
+  if (viewMode === 'editor') { postToEditor({ action: 'invokeAction', actionName: 'redo' }); return; }
   if (!xmlRedo.length) { toast('没有可重做的操作', 'brass'); return; }
   xmlUndo.push(currentXml);
   const nxt = xmlRedo.pop();
@@ -1434,12 +1639,10 @@ function canvasAction(act) {
     else if (act === 'redo') doRedo();
     return;
   }
-  const map = {
-    undo: 'undo', redo: 'redo', zoomIn: 'zoomIn', zoomOut: 'zoomOut',
-    fit: 'fit', resetView: 'actualSize',
-  };
-  const a = map[act];
-  if (a) postToEditor({ action: a });
+  /* embed 协议中 undo/redo/zoom 等均须走 invokeAction；fit 是顶层专用 action */
+  const viaInvoke = { undo: 'undo', redo: 'redo', zoomIn: 'zoomIn', zoomOut: 'zoomOut', resetView: 'actualSize' };
+  if (viaInvoke[act]) postToEditor({ action: 'invokeAction', actionName: viaInvoke[act] });
+  else if (act === 'fit') postToEditor({ action: 'fit', border: 16, maxScale: 3 });
 }
 
 /* ══════════════════ 评论批注（Phase 3 ②） ══════════════════ */
@@ -1623,7 +1826,8 @@ function setViewMode(mode) {
   } else {
     canvasStage.classList.remove('mode-editor');
     canvasStage.classList.add('mode-preview');
-    // 从编辑器编辑结果同步回预览
+    // 从编辑器编辑结果同步回预览：先向编辑器索取最新 XML（autosave 的兜底），回包后再渲染
+    if (editorReady && requestEditorXml()) return;
     if (currentXml) renderPreview(currentXml);
   }
 }
@@ -1636,6 +1840,17 @@ function enterEditorMode() {
   } else if (editorReady && currentXml) {
     postLoad(currentXml);
   }
+  showEditorTipsOnce();
+}
+/* 首次进入精修模式时给出操作提示（只提示一次） */
+function showEditorTipsOnce() {
+  try {
+    if (localStorage.getItem('atelier.editorTips.v1') === '1') return;
+    localStorage.setItem('atelier.editorTips.v1', '1');
+  } catch (_) { return; }
+  setTimeout(() => {
+    toast('精修模式：可直接拖动图形 / 拉连线；空格+拖拽或右键拖拽平移画布', 'brass', 5200);
+  }, 1200);
 }
 
 /* ─── 离线 PNG 导出（无需 draw.io） ─── */
@@ -1665,7 +1880,9 @@ function exportPngOffline() {
 
 /* ══════════════════ 舞台遮罩 ══════════════════ */
 let verBadge, btnRetryEditor, btnNewChat, btnCloseSettings, btnSettings,
-    btnTemplates, btnHistory, btnExport, btnImportVisio, visioFile, btnCloseXml, btnCopyXml, btnDownloadXml;
+    btnTemplates, btnHistory, btnExport, btnImportVisio, visioFile, btnCloseXml, btnCopyXml, btnDownloadXml,
+    cloudModal, btnCloud, btnCloseCloud, cloudAuth, cloudPanel, cloudUser, cloudPass, cloudAuthErr,
+    btnCloudLogin, btnCloudRegister, cloudWhoami, cloudCount, btnCloudSave, btnCloudRefresh, btnCloudLogout, cloudList;
 
 /* 复制渲染结果到系统剪贴板（PNG 图片 / SVG 矢量） */
 async function copyImage(fmt) {
@@ -1789,82 +2006,12 @@ function wireComposer() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
   });
   input.addEventListener('input', autoGrow);
-  input.addEventListener('input', inferTypeFromInput);
-  wireQuickRow();
+  syncEditBanner();
 }
-const QUICK_TPL = {
-  '改文字': '把节点【旧文字】的文字改成【新文字】',
-  '加节点': '在【某个节点】后面加一个【新节点】，并用箭头连上',
-  '删节点': '删掉节点【节点名】',
-  '换配色': '整体换成【莫兰迪冷灰】配色，保持布局结构不变',
-  '加说明': '给【节点】补一条简短说明文字',
-};
-function wireQuickRow() {
-  if (!quickRow) return;
-  qa('.qchip', quickRow).forEach((b) => {
-    b.addEventListener('click', () => {
-      const tpl = QUICK_TPL[b.dataset.tpl];
-      if (!tpl) return;
-      input.value = tpl; autoGrow(); input.focus();
-    });
-  });
-}
-function updateQuickRow() {
-  if (quickRow) quickRow.hidden = !currentXml;
+/* 有图时显示「基于当前图迭代」横幅（原快改 chips 行已移除） */
+function syncEditBanner() {
   if (editMode) editMode.hidden = !currentXml;
-  if (quickDyn) {
-    quickDyn.innerHTML = '';
-    if (!currentXml) return;
-    extractNodeLabels(currentXml).slice(0, 3).forEach((lb) => {
-      const b = document.createElement('button');
-      b.className = 'qchip dyn';
-      b.textContent = '改『' + lb + '』配色';
-      b.title = '让 AI 在现有图上修改「' + lb + '」的配色';
-      b.addEventListener('click', () => {
-        input.value = '把节点「' + lb + '」的配色换成另一种风格，其它保持不变';
-        autoGrow(); input.focus();
-      });
-      quickDyn.appendChild(b);
-    });
-  }
 }
-/* 从 draw.io XML 中提取顶点文字标签，供上下文快改 chips 使用 */
-function extractNodeLabels(xml) {
-  const labels = [];
-  const re = /<mxCell\b[^>]*\bvertex="1"[^>]*\bvalue="([^"]*)"/g;
-  let m;
-  while ((m = re.exec(xml)) && labels.length < 12) {
-    let v = m[1]
-      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"').replace(/<br>/g, ' ').replace(/<[^>]+>/g, '')
-      .replace(/\s+/g, ' ').trim();
-    if (v && v.length <= 16 && !labels.includes(v)) labels.push(v);
-  }
-  return labels;
-}
-function wireTypeStrip() {
-  qa('.chip', typeStrip).forEach((chip) => {
-    chip.addEventListener('click', () => {
-      qa('.chip', typeStrip).forEach((c) => { c.classList.remove('active'); c.classList.remove('inferred'); });
-      chip.classList.add('active');
-    });
-  });
-}
-/* 输入时根据中文描述实时推断图类型，高亮类型条（.chip.inferred）。
- * 与 updateDiagramInsight 的 .chip.detected（当前图类型）区分：inferred 是「你想画什么」的联想。 */
-function inferTypeFromInput() {
-  if (!typeStrip || !input) return;
-  const v = (input.value || '').trim();
-  qa('.chip', typeStrip).forEach((c) => { c.classList.remove('inferred'); if (c.title && c.title.indexOf('根据描述推断') === 0) c.title = ''; });
-  if (!v || !window.DiagramSemantic) return;
-  const r = window.DiagramSemantic.detectIntent(v);
-  if (r.type === 'auto' || !r.type) return;
-  const chip = typeStrip.querySelector('.chip[data-type="' + r.type + '"]');
-  if (!chip) return;
-  chip.classList.add('inferred');
-  chip.title = '根据描述推断：' + (r.label || r.type) + (r.matched && r.matched.length ? '（匹配：' + r.matched.join('、') + '）' : '');
-}
-
 /* ══════════════════ 模板抽屉 ══════════════════ */
 /* ══════════════════ 个人模板库（Phase 3 ③ 团队/个人模板库） ════════════════ */
 /* 单机版「团队模板库」：模板存于本机 localStorage，可一键沉淀 AI 生成的图，
@@ -2268,6 +2415,84 @@ function renderHistory() {
   });
 }
 
+/* ══════════════════ 我的图表（本机图库） ══════════════════ */
+/* 与「版本历史」（自动快照）互补：这里是用户主动命名保存的图，跨对话常驻 */
+const LIB_CAP = 200;
+function loadLib() {
+  try {
+    const raw = localStorage.getItem(LS.diagrams);
+    const a = raw ? JSON.parse(raw) : [];
+    return Array.isArray(a) ? a : [];
+  } catch (_) { return []; }
+}
+function persistLib(arr) {
+  try { localStorage.setItem(LS.diagrams, JSON.stringify(arr.slice(0, LIB_CAP))); } catch (_) {}
+}
+function openLib() {
+  libDrawer.hidden = false;
+  scrim.hidden = false;
+  renderLib();
+}
+function defaultLibName() {
+  const base = (canvasTitle && canvasTitle.textContent && canvasTitle.textContent !== '画布')
+    ? canvasTitle.textContent.trim() : '未命名图表';
+  return base + ' · ' + fmtTime(Date.now());
+}
+function saveToLib() {
+  if (!currentXml) { toast('画布为空，先画点东西再保存', 'brass'); return; }
+  const name = ((libName && libName.value) || '').trim() || defaultLibName();
+  const arr = loadLib();
+  arr.unshift({
+    id: 'dg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    name,
+    xml: currentXml,
+    summary: window.DiagramRender && window.DiagramRender.last && window.DiagramRender.last.ok
+      ? { vertices: window.DiagramRender.last.vertices, edges: window.DiagramRender.last.edges }
+      : null,
+    updatedAt: Date.now(),
+  });
+  persistLib(arr);
+  if (libName) libName.value = '';
+  renderLib();
+  toast('已保存到我的图表：' + name, 'ok');
+}
+function renderLib() {
+  if (!libList) return;
+  libList.innerHTML = '';
+  const arr = loadLib();
+  if (!arr.length) {
+    libList.innerHTML = '<div class="empty-state"><p>还没有保存的图表。<br>上方输入名称后点「保存当前」即可沉淀。</p></div>';
+    return;
+  }
+  arr.forEach((d) => {
+    const meta = d.summary ? `${d.summary.vertices ?? 0} 图形 · ${d.summary.edges ?? 0} 连线` : 'draw.io 兼容 XML';
+    const item = document.createElement('div');
+    item.className = 'hist-item';
+    item.innerHTML = `
+      <div class="hi-top"><span class="hi-title">${esc(d.name)}</span><span class="hi-time">${fmtTime(d.updatedAt)}</span></div>
+      <div class="hi-meta">${meta}</div>
+      <div class="hi-actions">
+        <span class="hi-diff">载入</span>
+        <span class="hi-del">删除</span>
+      </div>`;
+    item.addEventListener('click', (e) => {
+      if (e.target.classList.contains('hi-del') || e.target.classList.contains('hi-diff')) return;
+      loadXml(d.xml);
+      canvasTitle.textContent = d.name;
+      updateStats(d.summary);
+      closeAllDrawers();
+      toast('已载入：' + d.name, 'ok');
+    });
+    item.querySelector('.hi-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      persistLib(loadLib().filter((x) => x.id !== d.id));
+      renderLib();
+      toast('已删除：' + d.name, 'ok');
+    });
+    libList.appendChild(item);
+  });
+}
+
 /* ════════════════ 版本对比（行级 diff） ════════════════ */
 function prettifyXml(xml) {
   if (!xml) return '';
@@ -2319,6 +2544,31 @@ function openDiff(versionXml, title) {
 }
 
 /* ══════════════════ 导出菜单 / XML 弹窗 ══════════════════ */
+async function exportVisioFile() {
+  if (!currentXml) { toast('画布为空', 'err'); return; }
+  try {
+    toast('正在生成 Visio 文件…', 'ok');
+    const resp = await fetch('/api/export/visio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xml: currentXml, title: 'Diagram Atelier' }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error((data && data.error) || '导出失败');
+    }
+    const buf = await resp.arrayBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.ms-visio.drawing' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'diagram.vsdx';
+    a.click();
+    setTimeout(() => { try { URL.revokeObjectURL(a.href); } catch (_) {} }, 4000);
+    toast('已导出 .vsdx，可用 Visio / LibreOffice 打开', 'ok');
+  } catch (err) {
+    toast('Visio 导出失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
 function wireExport() {
   btnExport.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -2332,6 +2582,8 @@ function wireExport() {
         if (!currentXml) { toast('画布为空', 'err'); return; }
         downloadText(currentXml, 'diagram.drawio', 'application/xml');
         toast('已导出 .drawio 源文件', 'ok');
+      } else if (fmt === 'vsdx') {
+        exportVisioFile();
       } else if (fmt === 'xmlview') {
         openXmlModal();
       } else if (fmt === 'svg') {
@@ -2611,13 +2863,23 @@ function closeAllDrawers() {
   historyDrawer.hidden = true;
   templateDrawer.hidden = true;
   if (shapesDrawer) shapesDrawer.hidden = true;
+  if (libDrawer) libDrawer.hidden = true;
 }
 function allDrawersClosed() {
-  return historyDrawer.hidden && templateDrawer.hidden && (!commentsDrawer || commentsDrawer.hidden) && (!shapesDrawer || shapesDrawer.hidden);
+  return historyDrawer.hidden && templateDrawer.hidden && (!commentsDrawer || commentsDrawer.hidden) && (!shapesDrawer || shapesDrawer.hidden) && (!libDrawer || libDrawer.hidden);
 }
 function wireDrawers() {
   btnTemplates.addEventListener('click', openTemplates);
   btnHistory.addEventListener('click', openHistory);
+  // 「更多」下拉：点击切换，点击外部收起；菜单项各自打开对应抽屉
+  if (btnMore) btnMore.addEventListener('click', (e) => {
+    e.stopPropagation();
+    moreWrap.classList.toggle('open');
+  });
+  document.addEventListener('click', () => { if (moreWrap) moreWrap.classList.remove('open'); });
+  if (btnMyDiagrams) btnMyDiagrams.addEventListener('click', () => { moreWrap.classList.remove('open'); openLib(); });
+  if (btnLibSave) btnLibSave.addEventListener('click', saveToLib);
+  if (libName) libName.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveToLib(); });
   qa('[data-close]').forEach((b) =>
     b.addEventListener('click', () => { $(b.dataset.close).hidden = true; if (allDrawersClosed()) scrim.hidden = true; }));
   // 画布空状态：示例库（一键载入模板）+ AI 生成快捷入口
@@ -2770,6 +3032,200 @@ function wireVisioImport() {
     }
   });
 }
+/* ══════════════════ 云端图库（自托管账号） ══════════════════ */
+const LS_CLOUD_TOKEN = 'atelier.cloud.token.v1';
+let cloudToken = null;
+
+function cloudHeaders() {
+  return { 'content-type': 'application/json', authorization: 'Bearer ' + (cloudToken || '') };
+}
+
+function showCloudAuthErr(msg) {
+  if (!cloudAuthErr) return;
+  if (msg) { cloudAuthErr.textContent = msg; cloudAuthErr.hidden = false; }
+  else { cloudAuthErr.hidden = true; }
+}
+
+function switchCloudPanel(loggedIn) {
+  cloudAuth.hidden = loggedIn;
+  cloudPanel.hidden = !loggedIn;
+  if (loggedIn) showCloudAuthErr('');
+}
+
+async function cloudAuthRequest(mode) {
+  const username = (cloudUser.value || '').trim();
+  const password = cloudPass.value || '';
+  if (!username || !password) { showCloudAuthErr('请填写用户名和密码'); return; }
+  try {
+    const resp = await fetch('/api/auth/' + mode, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.token) throw new Error(data.error || '操作失败');
+    cloudToken = data.token;
+    try { localStorage.setItem(LS_CLOUD_TOKEN, cloudToken); } catch (_) {}
+    cloudPass.value = '';
+    switchCloudPanel(true);
+    cloudWhoami.textContent = data.user.username;
+    await refreshCloudList();
+    toast(mode === 'register' ? '注册成功，已登录「' + data.user.username + '」' : '欢迎回来，「' + data.user.username + '」', 'ok');
+  } catch (err) {
+    showCloudAuthErr(err && err.message ? err.message : String(err));
+  }
+}
+
+async function refreshCloudList() {
+  try {
+    const resp = await fetch('/api/diagrams', { headers: cloudHeaders() });
+    if (resp.status === 401) { cloudSignOut(true); return; }
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '读取失败');
+    const list = data.list || [];
+    cloudCount.textContent = list.length + ' 张';
+    if (!list.length) {
+      cloudList.innerHTML = '<p class="cloud-empty">云端还没有图表，点上方「保存当前图到云端」试试。</p>';
+      return;
+    }
+    cloudList.innerHTML = '';
+    for (const d of list) {
+      const row = document.createElement('div');
+      row.className = 'cloud-item';
+      const meta = document.createElement('div');
+      meta.className = 'cloud-item-meta';
+      const name = document.createElement('button');
+      name.className = 'cloud-item-title';
+      name.textContent = d.title;
+      name.title = '点击载入到画布';
+      name.addEventListener('click', () => cloudOpen(d.id));
+      const info = document.createElement('span');
+      info.className = 'cloud-item-info';
+      info.textContent = `${d.vertices || 0} 节点 · ${d.edges || 0} 连线 · ${new Date(d.updatedAt || d.createdAt).toLocaleDateString()}`;
+      meta.appendChild(name);
+      meta.appendChild(info);
+      const actions = document.createElement('div');
+      actions.className = 'cloud-item-actions';
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn ghost sm';
+      openBtn.textContent = '打开';
+      openBtn.addEventListener('click', () => cloudOpen(d.id));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn ghost sm';
+      delBtn.textContent = '删除';
+      delBtn.addEventListener('click', () => cloudDelete(d.id, d.title));
+      actions.appendChild(openBtn);
+      actions.appendChild(delBtn);
+      row.appendChild(meta);
+      row.appendChild(actions);
+      cloudList.appendChild(row);
+    }
+  } catch (err) {
+    toast('云端列表读取失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
+
+async function cloudOpen(id) {
+  try {
+    const resp = await fetch('/api/diagrams/' + encodeURIComponent(id), { headers: cloudHeaders() });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '读取失败');
+    loadXml(data.xml);
+    cloudModal.hidden = true;
+    if (allDrawersClosed() && settingsEl.hidden) scrim.hidden = true;
+    toast('已载入云端图表「' + data.title + '」', 'ok');
+  } catch (err) {
+    toast('云端图表载入失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
+
+async function cloudSaveCurrent() {
+  if (!currentXml) { toast('画布为空，先画点什么再保存', 'err'); return; }
+  const defTitle = (canvasTitle && canvasTitle.textContent || '').trim();
+  const title = window.prompt('保存到云端的图表名称：', defTitle && defTitle !== '未命名图表' ? defTitle : '未命名图表');
+  if (title === null) return; // 用户取消
+  try {
+    const resp = await fetch('/api/diagrams', {
+      method: 'POST',
+      headers: cloudHeaders(),
+      body: JSON.stringify({ title, xml: currentXml }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '保存失败');
+    toast('已保存到云端「' + data.title + '」', 'ok');
+    await refreshCloudList();
+  } catch (err) {
+    toast('云端保存失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
+
+async function cloudDelete(id, title) {
+  if (!window.confirm('确定删除云端图表「' + title + '」？此操作不可恢复。')) return;
+  try {
+    const resp = await fetch('/api/diagrams/' + encodeURIComponent(id), { method: 'DELETE', headers: cloudHeaders() });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.error || '删除失败');
+    }
+    toast('已删除「' + title + '」', 'ok');
+    await refreshCloudList();
+  } catch (err) {
+    toast('删除失败：' + (err && err.message ? err.message : err), 'err');
+  }
+}
+
+function cloudSignOut(silent) {
+  const hadToken = !!cloudToken;
+  cloudToken = null;
+  try { localStorage.removeItem(LS_CLOUD_TOKEN); } catch (_) {}
+  switchCloudPanel(false);
+  if (!silent && hadToken) toast('已退出云端登录', 'ok');
+}
+
+function openCloudModal() {
+  cloudModal.hidden = false;
+  scrim.hidden = false;
+  if (cloudToken) {
+    switchCloudPanel(true);
+    refreshCloudList();
+  } else {
+    switchCloudPanel(false);
+  }
+}
+
+async function cloudRestoreSession() {
+  let token = null;
+  try { token = localStorage.getItem(LS_CLOUD_TOKEN); } catch (_) {}
+  if (!token) return;
+  try {
+    const resp = await fetch('/api/auth/me', { headers: { authorization: 'Bearer ' + token } });
+    if (!resp.ok) { cloudSignOut(true); return; }
+    const data = await resp.json();
+    cloudToken = token;
+    cloudWhoami.textContent = data.user && data.user.username;
+  } catch (_) { /* 服务端不可达时保留 token，打开面板再验 */ }
+}
+
+function wireCloud() {
+  if (!btnCloud || !cloudModal) return;
+  btnCloud.addEventListener('click', openCloudModal);
+  btnCloseCloud.addEventListener('click', () => {
+    cloudModal.hidden = true;
+    if (allDrawersClosed() && settingsEl.hidden) scrim.hidden = true;
+  });
+  btnCloudLogin.addEventListener('click', () => cloudAuthRequest('login'));
+  btnCloudRegister.addEventListener('click', () => cloudAuthRequest('register'));
+  cloudPass.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); cloudAuthRequest(cloudAuth.hidden ? 'login' : 'login'); }
+  });
+  btnCloudSave.addEventListener('click', cloudSaveCurrent);
+  btnCloudRefresh.addEventListener('click', refreshCloudList);
+  btnCloudLogout.addEventListener('click', () => {
+    fetch('/api/auth/logout', { method: 'POST', headers: cloudHeaders() }).catch(() => {});
+    cloudSignOut(false);
+  });
+}
+
 function wirePalette() {
   if (!paletteEl) return;
   paletteInput.addEventListener('input', () => renderPalette(paletteInput.value));
@@ -2790,7 +3246,7 @@ function wirePalette() {
 /* ══════════════════ 键盘 / 路由 ══════════════════ */
 /* a11y：对话框焦点管理（零侵入集中式） */
 const FOCUSABLE_SEL = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-const DIALOG_IDS = ['historyDrawer', 'templateDrawer', 'commentsDrawer', 'shapesDrawer', 'settings', 'xmlModal', 'diffModal', 'shareModal', 'palette', 'shapeUploadModal'];
+const DIALOG_IDS = ['historyDrawer', 'templateDrawer', 'commentsDrawer', 'shapesDrawer', 'settings', 'xmlModal', 'diffModal', 'shareModal', 'palette', 'shapeUploadModal', 'cloudModal'];
 let a11yDialogs = [];
 let focusReturn = null;
 
@@ -2905,12 +3361,12 @@ function addEmptyState() {
     <h3>用一句话画出专业图表</h3>
     <p>描述需求，AI 自动生成可继续编辑的流程图、架构图或思维导图。</p>
     <div class="es-examples">
+      <button data-act="templates">浏览模板库</button>
       <button>画一个电商下单到发货的流程图，含库存校验与支付失败分支</button>
-      <button>设计一个典型的微服务后端架构图，分层展示</button>
-      <button>用思维导图梳理「产品上线前 checklist」</button>
     </div>`;
   es.querySelectorAll('.es-examples button').forEach((b) =>
     b.addEventListener('click', () => {
+      if (b.dataset.act === 'templates') { openTemplates(); return; }
       input.value = b.textContent.trim();
       autoGrow();
       sendChat();
@@ -2934,9 +3390,10 @@ async function bootstrap() {
   typeDetect = $('typeDetect'); typeDetectLabel = $('typeDetectLabel'); isoPill = $('isoPill'); stylePill = $('stylePill');
   layoutPill = $('layoutPill');
   fixPill = $('fixPill');
-  typeStrip = $('typeStrip'); settingsEl = $('settings'); scrim = $('scrim'); presetGrid = $('presetGrid');
+  settingsEl = $('settings'); scrim = $('scrim'); presetGrid = $('presetGrid');
   protoSeg = $('protoSeg'); cfgBase = $('cfgBase'); cfgKey = $('cfgKey'); btnToggleKey = $('btnToggleKey');
   cfgModel = $('cfgModel'); modelList = $('modelList'); modelHint = $('modelHint'); cfgTemp = $('cfgTemp');
+  btnFetchModels = $('btnFetchModels');
   tempVal = $('tempVal'); cfgMaxTokens = $('cfgMaxTokens'); cfgExtra = $('cfgExtra'); btnVerify = $('btnVerify');
   verifyResult = $('verifyResult'); historyDrawer = $('historyDrawer'); historyList = $('historyList');
   templateDrawer = $('templateDrawer'); templateList = $('templateList'); tplTabs = $('tplTabs'); exportWrap = $('exportWrap');
@@ -2944,21 +3401,25 @@ async function bootstrap() {
   agentPanel = $('agentPanel');
   previewWrap = $('previewWrap'); previewEmpty = $('previewEmpty');
   viewToggle = $('viewToggle'); canvasStage = $('canvasStage');
-  quickRow = $('quickRow');
   verBadge = $('verBadge'); btnRetryEditor = $('btnRetryEditor'); btnNewChat = $('btnNewChat');
   btnCloseSettings = $('btnCloseSettings'); btnSettings = $('btnSettings');
   btnTemplates = $('btnTemplates'); btnHistory = $('btnHistory'); btnExport = $('btnExport');
   btnImportVisio = $('btnImportVisio'); visioFile = $('visioFile');
+  btnCloud = $('btnCloud'); cloudModal = $('cloudModal'); btnCloseCloud = $('btnCloseCloud');
+  cloudAuth = $('cloudAuth'); cloudPanel = $('cloudPanel'); cloudUser = $('cloudUser'); cloudPass = $('cloudPass');
+  cloudAuthErr = $('cloudAuthErr'); btnCloudLogin = $('btnCloudLogin'); btnCloudRegister = $('btnCloudRegister');
+  cloudWhoami = $('cloudWhoami'); cloudCount = $('cloudCount'); btnCloudSave = $('btnCloudSave');
+  btnCloudRefresh = $('btnCloudRefresh'); btnCloudLogout = $('btnCloudLogout'); cloudList = $('cloudList');
   btnCloseXml = $('btnCloseXml'); btnCopyXml = $('btnCopyXml'); btnDownloadXml = $('btnDownloadXml');
   btnTheme = $('btnTheme');
   convDrawer = $('convDrawer'); convList = $('convList'); btnConvs = $('btnConvs');
   cfgList = $('cfgList'); btnAddCfg = $('btnAddCfg'); cfgName = $('cfgName');
-  quickDyn = $('quickDyn'); editMode = $('editMode');
-  paletteEl = $('palette'); paletteInput = $('paletteInput'); paletteList = $('paletteList');
-  diffModal = $('diffModal'); diffView = $('diffView'); diffTitle = $('diffTitle');
+  editMode = $('editMode');
+  paletteEl = $('palette'); paletteInput = $('paletteInput'); paletteList = $('paletteList');  diffModal = $('diffModal'); diffView = $('diffView'); diffTitle = $('diffTitle');
   btnCloseDiff = $('btnCloseDiff');
-  btnTypeToggle = $('btnTypeToggle');
   btnToggleSidebar = $('btnToggleSidebar');
+  moreWrap = $('moreWrap'); btnMore = $('btnMore'); btnMyDiagrams = $('btnMyDiagrams');
+  libDrawer = $('libDrawer'); libList = $('libList'); libName = $('libName'); btnLibSave = $('btnLibSave');
   saveInd = $('saveInd'); saveText = $('saveText');
   backupFile = $('backupFile'); btnBackup = $('btnBackup'); btnRestore = $('btnRestore');
   btnWipe = $('btnWipe'); dmWarn = $('dmWarn');
@@ -3000,7 +3461,7 @@ async function bootstrap() {
 
   // 事件
   wireComposer();
-  wireTypeStrip();
+  syncEditBanner();
   wireSettings();
   wireDataMgmt();
   wireTidy();
@@ -3023,6 +3484,8 @@ async function bootstrap() {
   wireTheme();
   wireCollab();
   wireVisioImport();
+  wireCloud();
+  cloudRestoreSession();
   // 携带 ?collab=room 进入：自动重连到邀请的协作房间
   try {
     const autoRoom = new URLSearchParams(location.search).get('collab');
@@ -3033,7 +3496,7 @@ async function bootstrap() {
     if (allDrawersClosed() && settingsEl.hidden && xmlModal.hidden && paletteEl.hidden) scrim.hidden = true;
   });
   btnNewChat.addEventListener('click', newConversation);
-  if (btnTypeToggle) btnTypeToggle.addEventListener('click', () => agentPanel.classList.toggle('type-collapsed'));
+
   // 监听对话区变化，自动切换 has-conv（收起副标题引导语）
   try {
     const chatObserver = new MutationObserver(() => syncAgentChrome());
@@ -3052,12 +3515,14 @@ async function bootstrap() {
   rebuildMessages(conv ? conv.history : []);
   if (currentXml) renderPreview(currentXml);
   else { previewWrap.innerHTML = ''; previewEmpty.hidden = false; }
-  updateQuickRow();
   renderConvList();
 
   applyHashRoute();
   showRecoveryNotice();
   loadSharedFromUrl();
+
+  // 首启自动聚焦输入框（窄屏跳过，避免移动端弹出软键盘遮挡画布）
+  try { if (window.innerWidth > 768) input.focus({ preventScroll: true }); } catch (_) {}
 }
 
 /* 崩溃 / 重开后的恢复确认提示：检测本地是否有真实进度，仅每会话首次提示一次 */
@@ -3239,7 +3704,6 @@ function updateDiagramInsight() {
     if (isoPill) isoPill.hidden = true;
     if (layoutPill) layoutPill.hidden = true;
     if (fixPill) fixPill.hidden = true;
-    qa('.chip', typeStrip).forEach((c) => c.classList.remove('detected'));
     return;
   }
   const a = analyzeDiagram(currentXml);
@@ -3248,7 +3712,6 @@ function updateDiagramInsight() {
     typeDetect.dataset.type = a.type;
     typeDetectLabel.textContent = a.typeLabel;
   }
-  qa('.chip', typeStrip).forEach((c) => c.classList.toggle('detected', c.dataset.type === a.type));
   const vSpan = statV && statV.querySelector('b');
   const eSpan = statE && statE.querySelector('b');
   if (vSpan) vSpan.textContent = a.nodes ?? 0;

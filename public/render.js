@@ -162,32 +162,78 @@
   /* ─── 顶点形状绘制 ─── */
   function shapeOf(st) {
     if (st.shape && String(st.shape).indexOf('atos:') === 0) return 'shapeicon';
-    if (st.rhombus) return 'rhombus';
+    if (st.rhombus || st.shape === 'rhombus' || st.shape === 'diamond') return 'rhombus';
     if (st.shape === 'cylinder3' || st.shape === 'cylinder') return 'cylinder';
-    if (st.ellipse) return 'ellipse';
+    if (st.ellipse || st.shape === 'ellipse') return 'ellipse';
     if (st.swimlane || st.shape === 'swimlane') return 'swimlane';
+    if (st.shape === 'parallelogram') return 'parallelogram';
+    if (st.shape === 'trapezoid') return 'trapezoid';
+    if (st.shape === 'hexagon') return 'hexagon';
+    if (st.shape === 'triangle') return 'triangle';
+    if (st.shape === 'note') return 'note';
+    if (st.shape === 'cloud') return 'cloud';
+    if (st.shape === 'document') return 'document';
+    if (st.shape === 'process') return 'process';
+    if (st.shape === 'actor') return 'actor';
+    if (st.shape === 'umlLifeline') return 'lifeline';
     if ((st.fillColor === 'none' && st.strokeColor === 'none') || /^text;/.test(st.__raw || '')) return 'text';
     return 'rect';
   }
 
-  function drawText(box, value, st, opts) {
-    const lines = linesOf(value);
-    if (!lines.length) return '';
-    const fs = parseFloat(st.fontSize) || 13;
+  /* 估算单行文本宽度（CJK 约 1em，ASCII 约 0.55em），供按宽度折行 */
+  function textWidth(ln, fs) {
+    let w = 0;
+    for (const ch of ln) {
+      const cp = ch.codePointAt(0);
+      const wide = cp >= 0x2E80 || (cp >= 0x3000 && cp <= 0x9FFF) || (cp >= 0xFF00 && cp <= 0xFF60) || (cp >= 0x1F300 && cp <= 0x1FAFF);
+      w += wide ? fs : fs * 0.55;
+    }
+    return w;
+  }
+
+  /* 按节点宽度折行（whiteSpace=wrap 的近似实现）；超宽单个词按字符硬切 */
+  function wrapLines(value, box, fs) {
+    const src = linesOf(value);
+    if (!src.length || !box.w) return src;
+    const maxW = box.w - 14;
+    const out = [];
+    for (const raw of src) {
+      if (textWidth(raw, fs) <= maxW) { out.push(raw); continue; }
+      let cur = '';
+      for (const ch of raw) {
+        const test = cur + ch;
+        if (textWidth(test, fs) > maxW && cur) {
+          out.push(cur);
+          cur = ch === ' ' ? '' : ch;
+        } else {
+          cur = test;
+        }
+      }
+      if (cur) out.push(cur);
+    }
+    return out;
+  }
+
+  function drawText(box, value, st) {
+    const fs0 = parseFloat(st.fontSize) || 13;
+    const src = wrapLines(value, box, fs0);
+    if (!src.length) return '';
+    const fs = fs0;
     const color = st.fontColor || palette().text;
-    const bold = /(^|;)fontStyle=([^;]*\b(1)\b)?/.test('fontStyle=' + (st.fontStyle || '0')) ||
-      String(st.fontStyle || '').split('').indexOf('1') >= 0;
-    const weight = (st.fontStyle && String(st.fontStyle).indexOf('1') >= 0) ? 700 : 500;
+    const fm = parseInt(st.fontStyle, 10) || 0;
+    const weight = (fm & 1) ? 700 : 500;
+    const italic = (fm & 2) ? ' font-style="italic"' : '';
+    const underline = (fm & 4) ? ' text-decoration="underline"' : '';
     const lineH = fs * 1.28;
     const cx = box.x + box.w / 2;
     const align = st.align || 'center';
     const tx = align === 'left' ? box.x + 10 : align === 'right' ? box.x + box.w - 10 : cx;
     const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
-    const totalH = lines.length * lineH;
+    const totalH = src.length * lineH;
     let startY = box.y + box.h / 2 - totalH / 2 + fs * 0.82;
-    const tspans = lines.map((ln, i) =>
+    const tspans = src.map((ln, i) =>
       `<tspan x="${tx.toFixed(1)}" y="${(startY + i * lineH).toFixed(1)}">${escAttr(ln)}</tspan>`).join('');
-    return `<text font-family="Helvetica, Arial, sans-serif" font-size="${fs}" font-weight="${weight}" ` +
+    return `<text font-family="Helvetica, Arial, sans-serif" font-size="${fs}" font-weight="${weight}"${italic}${underline} ` +
       `fill="${color}" text-anchor="${anchor}" dominant-baseline="auto">${tspans}</text>`;
   }
 
@@ -197,6 +243,9 @@
     const stroke = st.strokeColor && st.strokeColor !== 'none' ? st.strokeColor : 'none';
     const sw = parseFloat(st.strokeWidth) || (stroke === 'none' ? 0 : 1.5);
     const kind = shapeOf(Object.assign({}, st, { __raw: c.style }));
+    const op = st.opacity != null ? ` opacity="${clamp(parseFloat(st.opacity) / 100 || 1, 0, 1)}"` : '';
+    const open = `<g${op}>`;
+    const shapeAttrs = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}"`;
 
     if (kind === 'text') {
       return `<g>${drawText(box, c.value, st)}</g>`;
@@ -239,24 +288,29 @@
         bar = `<rect x="${box.x}" y="${box.y}" width="${startSize}" height="${box.h}" ` +
           `fill="${stroke}" opacity="0.10" stroke="${stroke}" stroke-width="${sw}"/>`;
       }
-      const titleBox = horizontal
-        ? { x: box.x, y: box.y, w: box.w, h: startSize }
-        : { x: box.x, y: box.y, w: startSize, h: box.h };
-      const titleLines = linesOf(c.value);
-      const titleText = drawText(titleBox, c.value, Object.assign({}, st, { fontSize: (parseFloat(st.fontSize) || 14) }));
-      return `<g>${inner}${bar}${titleText}</g>`;
+      const titleSt = Object.assign({}, st, { fontSize: parseFloat(st.fontSize) || 14, fontStyle: st.fontStyle || 1 });
+      let titleText;
+      if (horizontal) {
+        titleText = drawText({ x: box.x, y: box.y, w: box.w, h: startSize }, c.value, titleSt);
+      } else {
+        // 竖排标题：绕标题栏中心旋转 -90°，避免窄条内横向溢出
+        const tcx = box.x + startSize / 2, tcy = box.y + box.h / 2;
+        const raw = drawText({ x: tcx - box.h / 2, y: tcy - startSize / 2, w: box.h, h: startSize }, c.value, titleSt);
+        titleText = raw.replace('<text ', `<text transform="rotate(-90 ${tcx.toFixed(1)} ${tcy.toFixed(1)})" `);
+      }
+      return `${open}${inner}${bar}${titleText}</g>`;
     }
 
     if (kind === 'rhombus') {
       const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
       const pts = `${cx},${box.y} ${box.x + box.w},${cy} ${cx},${box.y + box.h} ${box.x},${cy}`;
-      return `<g><polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>` +
+      return `${open}<polygon points="${pts}" ${shapeAttrs} stroke-linejoin="round"/>` +
         drawText(box, c.value, st) + `</g>`;
     }
 
     if (kind === 'ellipse') {
-      return `<g><ellipse cx="${box.x + box.w / 2}" cy="${box.y + box.h / 2}" rx="${box.w / 2}" ry="${box.h / 2}" ` +
-        `fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>${drawText(box, c.value, st)}</g>`;
+      return `${open}<ellipse cx="${box.x + box.w / 2}" cy="${box.y + box.h / 2}" rx="${box.w / 2}" ry="${box.h / 2}" ` +
+        `${shapeAttrs}/>${drawText(box, c.value, st)}</g>`;
     }
 
     if (kind === 'cylinder') {
@@ -266,15 +320,116 @@
       const bot = box.y + box.h - ry;
       const body = `M ${box.x} ${top} L ${box.x} ${bot} A ${rx} ${ry} 0 0 0 ${box.x + box.w} ${bot} ` +
         `L ${box.x + box.w} ${top} A ${rx} ${ry} 0 0 1 ${box.x} ${top} Z`;
-      const topEllipse = `<ellipse cx="${box.x + rx}" cy="${top}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
-      return `<g><path d="${body}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>${topEllipse}` +
+      const topEllipse = `<ellipse cx="${box.x + rx}" cy="${top}" rx="${rx}" ry="${ry}" ${shapeAttrs}/>`;
+      return `${open}<path d="${body}" ${shapeAttrs}/>${topEllipse}` +
         drawText({ x: box.x, y: top, w: box.w, h: box.h - ry }, c.value, st) + `</g>`;
     }
 
-    // 默认：圆角矩形
-    const rx = clamp((parseFloat(st.arcSize) || 12) / 100 * box.h, 2, box.w / 2, box.h / 2);
-    return `<g><rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="${rx}" ry="${rx}" ` +
-      `fill="${fill || palette().paper}" stroke="${stroke}" stroke-width="${sw}"/>${drawText(box, c.value, st)}</g>`;
+    if (kind === 'parallelogram' || kind === 'trapezoid') {
+      const skew = clamp(box.h * 0.35, 14, box.w * 0.3);
+      const pts = kind === 'parallelogram'
+        ? `${box.x + skew},${box.y} ${box.x + box.w},${box.y} ${box.x + box.w - skew},${box.y + box.h} ${box.x},${box.y + box.h}`
+        : `${box.x + skew * 0.6},${box.y} ${box.x + box.w - skew * 0.6},${box.y} ${box.x + box.w},${box.y + box.h} ${box.x},${box.y + box.h}`;
+      return `${open}<polygon points="${pts}" ${shapeAttrs} stroke-linejoin="round"/>` +
+        drawText(box, c.value, st) + `</g>`;
+    }
+
+    if (kind === 'hexagon') {
+      const cut = clamp(box.h * 0.28, 12, box.w * 0.3);
+      const pts = `${box.x + cut},${box.y} ${box.x + box.w - cut},${box.y} ${box.x + box.w},${box.y + box.h / 2} ` +
+        `${box.x + box.w - cut},${box.y + box.h} ${box.x + cut},${box.y + box.h} ${box.x},${box.y + box.h / 2}`;
+      return `${open}<polygon points="${pts}" ${shapeAttrs} stroke-linejoin="round"/>` +
+        drawText(box, c.value, st) + `</g>`;
+    }
+
+    if (kind === 'triangle') {
+      const south = st.direction === 'south' || st.direction === 'north';
+      let pts;
+      if (south) {
+        const down = st.direction !== 'north';
+        pts = down
+          ? `${box.x},${box.y} ${box.x + box.w},${box.y} ${box.x + box.w / 2},${box.y + box.h}`
+          : `${box.x},${box.y + box.h} ${box.x + box.w},${box.y + box.h} ${box.x + box.w / 2},${box.y}`;
+      } else {
+        pts = `${box.x},${box.y} ${box.x + box.w},${box.y + box.h / 2} ${box.x},${box.y + box.h}`;
+      }
+      return `${open}<polygon points="${pts}" ${shapeAttrs} stroke-linejoin="round"/>` +
+        drawText(box, c.value, st) + `</g>`;
+    }
+
+    if (kind === 'note') {
+      const fold = clamp(parseFloat(st.size) || 16, 10, Math.min(box.w, box.h) / 2);
+      const d = `M ${box.x} ${box.y} L ${box.x + box.w - fold} ${box.y} L ${box.x + box.w} ${box.y + fold} ` +
+        `L ${box.x + box.w} ${box.y + box.h} L ${box.x} ${box.y + box.h} Z`;
+      const foldPath = `M ${box.x + box.w - fold} ${box.y} L ${box.x + box.w - fold} ${box.y + fold} L ${box.x + box.w} ${box.y + fold}`;
+      return `${open}<path d="${d}" ${shapeAttrs} stroke-linejoin="round"/>` +
+        `<path d="${foldPath}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="0.6"/>` +
+        drawText({ x: box.x, y: box.y, w: box.w - 4, h: box.h }, c.value, st) + `</g>`;
+    }
+
+    if (kind === 'document') {
+      const wave = box.h * 0.12;
+      const d = `M ${box.x} ${box.y} L ${box.x + box.w} ${box.y} L ${box.x + box.w} ${box.y + box.h - wave} ` +
+        `Q ${(box.x + box.w * 0.75).toFixed(1)} ${box.y + box.h - wave * 2}, ${(box.x + box.w / 2).toFixed(1)} ${box.y + box.h - wave} ` +
+        `Q ${(box.x + box.w * 0.25).toFixed(1)} ${box.y + box.h}, ${box.x} ${box.y + box.h - wave} Z`;
+      return `${open}<path d="${d}" ${shapeAttrs} stroke-linejoin="round"/>` +
+        drawText({ x: box.x, y: box.y, w: box.w, h: box.h - wave }, c.value, st) + `</g>`;
+    }
+
+    if (kind === 'process') {
+      const inset = clamp(box.w * 0.06, 10, 24);
+      const body = `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" ${shapeAttrs}/>`;
+      const l1 = `<line x1="${box.x + inset}" y1="${box.y}" x2="${box.x + inset}" y2="${box.y + box.h}" stroke="${stroke}" stroke-width="${sw}"/>`;
+      const l2 = `<line x1="${box.x + box.w - inset}" y1="${box.y}" x2="${box.x + box.w - inset}" y2="${box.y + box.h}" stroke="${stroke}" stroke-width="${sw}"/>`;
+      return `${open}${body}${l1}${l2}${drawText(box, c.value, st)}</g>`;
+    }
+
+    if (kind === 'actor') {
+      const cx = box.x + box.w / 2;
+      const headR = Math.min(box.w, box.h) * 0.16;
+      const headCy = box.y + headR + 2;
+      const bodyTop = headCy + headR + 3;
+      const bodyBot = box.y + box.h * 0.68;
+      const armY = bodyTop + (bodyBot - bodyTop) * 0.35;
+      const legSplit = box.h * 0.32;
+      const fig =
+        `<circle cx="${cx}" cy="${headCy}" r="${headR}" ${shapeAttrs}/>` +
+        `<line x1="${cx}" y1="${headCy + headR}" x2="${cx}" y2="${bodyBot}" stroke="${stroke}" stroke-width="${Math.max(sw, 1.4)}" stroke-linecap="round"/>` +
+        `<line x1="${box.x + box.w * 0.18}" y1="${armY}" x2="${box.x + box.w * 0.82}" y2="${armY}" stroke="${stroke}" stroke-width="${Math.max(sw, 1.4)}" stroke-linecap="round"/>` +
+        `<line x1="${cx}" y1="${bodyBot}" x2="${cx - box.w * 0.22}" y2="${bodyBot + legSplit}" stroke="${stroke}" stroke-width="${Math.max(sw, 1.4)}" stroke-linecap="round"/>` +
+        `<line x1="${cx}" y1="${bodyBot}" x2="${cx + box.w * 0.22}" y2="${bodyBot + legSplit}" stroke="${stroke}" stroke-width="${Math.max(sw, 1.4)}" stroke-linecap="round"/>`;
+      return `${open}${fig}${drawText({ x: box.x, y: box.y + box.h * 0.62, w: box.w, h: box.h * 0.38 }, c.value, st)}</g>`;
+    }
+
+    if (kind === 'lifeline') {
+      const headH = clamp(parseFloat(st.size) || 40, 24, box.h / 2);
+      const cx = box.x + box.w / 2;
+      const head = `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${headH}" ${shapeAttrs}/>`;
+      const line = `<line x1="${cx}" y1="${box.y + headH}" x2="${cx}" y2="${box.y + box.h}" ` +
+        `stroke="${stroke || palette().edge}" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+      return `${open}${head}${line}${drawText({ x: box.x, y: box.y, w: box.w, h: headH }, c.value, st)}</g>`;
+    }
+
+    if (kind === 'cloud') {
+      const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+      const puffs = [
+        { dx: -0.34, dy: 0.02, r: 0.26 }, { dx: 0.0, dy: -0.16, r: 0.30 },
+        { dx: 0.32, dy: 0.02, r: 0.26 }, { dx: 0.14, dy: 0.12, r: 0.24 }, { dx: -0.14, dy: 0.12, r: 0.24 },
+      ];
+      const circles = puffs.map((p) =>
+        `<circle cx="${(cx + p.dx * box.w).toFixed(1)}" cy="${(cy + p.dy * box.h).toFixed(1)}" r="${(p.r * Math.min(box.w, box.h) * 1.35).toFixed(1)}" fill="${fill}" stroke="none"/>`).join('');
+      const base = `<ellipse cx="${cx}" cy="${cy + box.h * 0.1}" rx="${box.w * 0.46}" ry="${box.h * 0.3}" fill="${fill}" stroke="none"/>`;
+      const outline = `<ellipse cx="${cx}" cy="${cy + box.h * 0.1}" rx="${box.w * 0.46}" ry="${box.h * 0.3}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>` +
+        puffs.map((p) =>
+          `<circle cx="${(cx + p.dx * box.w).toFixed(1)}" cy="${(cy + p.dy * box.h).toFixed(1)}" r="${(p.r * Math.min(box.w, box.h) * 1.35).toFixed(1)}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>`).join('');
+      return `${open}${circles}${base}${outline}${drawText(box, c.value, st)}</g>`;
+    }
+
+    // 默认：矩形（rounded=0 时直角；rounded=1 时按 arcSize 圆角）
+    const rounded = st.rounded !== '0';
+    const rx = rounded ? clamp((parseFloat(st.arcSize) || 12) / 100 * Math.min(box.w, box.h), 2, Math.min(box.w, box.h) / 2) : 0;
+    return `${open}<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="${rx.toFixed(1)}" ry="${rx.toFixed(1)}" ` +
+      `${shapeAttrs}/>${drawText(box, c.value, st)}</g>`;
   }
 
   /* ─── 边绘制 ─── */
@@ -340,7 +495,7 @@
       const c2 = { x: t.x + dt.x * k, y: t.y + dt.y * k };
       return { curve: [s, c1, c2, t] };
     }
-    if (st.edgeStyle === 'orthogonalEdgeStyle' || !st.edgeStyle) {
+    if (st.edgeStyle === 'orthogonalEdgeStyle' || st.edgeStyle === 'entityRelationEdgeStyle' || !st.edgeStyle || st.edgeStyle === 'straightEdgeStyle') {
       const midX = (s.x + t.x) / 2, midY = (s.y + t.y) / 2;
       if (Math.abs(t.x - s.x) >= Math.abs(t.y - s.y)) {
         return [s, { x: midX, y: s.y }, { x: midX, y: t.y }, t];
@@ -367,6 +522,52 @@
     return `<path d="M ${x.toFixed(1)} ${y.toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${color}"/>`;
   }
 
+  /* ER 端点标记：一（短垂线）/ 多（鸦爪） */
+  function erMark(x, y, ang, color, many) {
+    const nx = Math.cos(ang), ny = Math.sin(ang);
+    const px = -ny, py = nx; // 垂直方向
+    const back = (d) => ({ x: x - nx * d, y: y - ny * d });
+    if (!many) {
+      const b = back(8);
+      const half = 5;
+      return `<line x1="${(b.x + px * half).toFixed(1)}" y1="${(b.y + py * half).toFixed(1)}" ` +
+        `x2="${(b.x - px * half).toFixed(1)}" y2="${(b.y - py * half).toFixed(1)}" stroke="${color}" stroke-width="1.6"/>`;
+    }
+    const spread = 7;
+    const foot = (off) => {
+      const b = back(10);
+      return `<line x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" ` +
+        `x2="${(b.x + px * off).toFixed(1)}" y2="${(b.y + py * off).toFixed(1)}" stroke="${color}" stroke-width="1.4"/>`;
+    };
+    return foot(0) + foot(spread) + foot(-spread);
+  }
+
+  /* 起点箭头/标记（startArrow） */
+  function startMark(st, x, y, ang, color) {
+    const kind = st.startArrow;
+    if (!kind || kind === 'none') return '';
+    if (kind === 'ERone' || kind === 'ERmandOne') return erMark(x, y, ang, color, false);
+    if (kind === 'ERmany' || kind === 'ERmandMany' || kind === 'ERoneToMany') return erMark(x, y, ang, color, true);
+    // open/classic/block 等：画一个反方向的箭头
+    const filled = kind !== 'open' && kind !== 'openThin';
+    const size = 8;
+    const a1 = ang - Math.PI / 7;
+    const a2 = ang + Math.PI / 7;
+    const x1 = x + size * Math.cos(a1), y1 = y + size * Math.sin(a1);
+    const x2 = x + size * Math.cos(a2), y2 = y + size * Math.sin(a2);
+    if (filled) return `<path d="M ${x.toFixed(1)} ${y.toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${color}"/>`;
+    return `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} L ${x.toFixed(1)} ${y.toFixed(1)} L ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+  }
+
+  /* 终点箭头/标记（endArrow） */
+  function endMark(st, x, y, ang, color) {
+    const kind = st.endArrow;
+    if (kind === 'ERone' || kind === 'ERmandOne') return erMark(x, y, ang, color, false);
+    if (kind === 'ERmany' || kind === 'ERmandMany' || kind === 'ERoneToMany') return erMark(x, y, ang, color, true);
+    if (kind === 'none') return '';
+    return arrowHead(x, y, ang, color);
+  }
+
   function drawEdge(edge, srcBox, tgtBox) {
     const st = edge.st;
     const { s, t } = edgeAnchors(edge, srcBox, tgtBox);
@@ -388,7 +589,12 @@
       lastSeg = Math.atan2(b.y - a.y, b.x - a.x);
     }
     let arrow = '';
-    if (hasArrow) arrow = arrowHead(t.x, t.y, lastSeg, color);
+    if (hasArrow) arrow = endMark(st, t.x, t.y, lastSeg, color);
+    // 起点标记（ER 基数 / startArrow）
+    const firstSeg = route.curve
+      ? Math.atan2(route.curve[1].y - route.curve[0].y, route.curve[1].x - route.curve[0].x)
+      : Math.atan2(route[1].y - route[0].y, route[1].x - route[0].x);
+    arrow += startMark(st, s.x, s.y, firstSeg, color);
     const path = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}" ${dash} stroke-linejoin="round" stroke-linecap="round"/>${arrow}`;
     // 边标签
     let label = '';
@@ -429,6 +635,9 @@
       if (c.id === '0' || c.id === '1') continue;
       if (c.edge) edges.push(c);
       else if (c.vertex) {
+        // 边标签单元（挂边上的 value 标签）：随边本身渲染，避免飘出独立方块
+        const p = map[c.parent];
+        if (c.relative || c.st.edgeLabel != null || (p && p.edge)) continue;
         const kind = shapeOf(Object.assign({}, c.st, { __raw: c.style }));
         if (kind === 'swimlane') containers.push(c);
         else vertices.push(c);

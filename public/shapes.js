@@ -16,6 +16,8 @@
     green: '#4F9D69',  // 服务
     brass: '#C9A961',  // 身份
     rust: '#C0623E',   // 运维 / 安全
+    slate: '#5B7DB1',  // 商业 / 办公
+    amber: '#B08325',  // 电气 / 能源
   };
 
   const wrap = (color, inner) =>
@@ -284,6 +286,68 @@
       keywords: ['sdk', '客户端', '代码', '集成', 'library'],
       svg: wrap(C.indigo, '<rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M9 10l-2 2 2 2M15 10l2 2-2 2M12 9v6"/>'),
     },
+    // ── 商业与办公 ──
+    {
+      id: 'doc', label: '文档', category: 'business', color: C.slate,
+      keywords: ['doc', 'document', '文档', '文件', '报告', '说明'],
+      svg: wrap(C.slate, '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>'),
+    },
+    {
+      id: 'report', label: '报表', category: 'business', color: C.slate,
+      keywords: ['report', '报表', '图表', '统计', '数据看板', 'bi'],
+      svg: wrap(C.slate, '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 15v-4M12 15V8M16 15v-2"/>'),
+    },
+    {
+      id: 'money', label: '资金', category: 'business', color: C.slate,
+      keywords: ['money', '资金', '支付', '财务', '结算', '账户'],
+      svg: wrap(C.slate, '<circle cx="12" cy="12" r="8"/><path d="M9 8l3 4 3-4M12 12v6M9.5 13.5h5M9.5 15.5h5"/>'),
+    },
+    {
+      id: 'meeting', label: '会议', category: 'business', color: C.slate,
+      keywords: ['meeting', '会议', '评审', '讨论', '协作', '视频会'],
+      svg: wrap(C.slate, '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 21h10M12 17v4"/><circle cx="9" cy="9.5" r="1.8"/><circle cx="15" cy="9.5" r="1.8"/>'),
+    },
+    {
+      id: 'org', label: '组织架构', category: 'business', color: C.slate,
+      keywords: ['org', '组织', '架构', '部门', '汇报线', ' hierarchy'],
+      svg: wrap(C.slate, '<rect x="9" y="3" width="6" height="4" rx="1"/><rect x="2.5" y="17" width="6" height="4" rx="1"/><rect x="15.5" y="17" width="6" height="4" rx="1"/><path d="M12 7v3M5.5 17v-4h13v4M12 10v7"/>'),
+    },
+    {
+      id: 'contract', label: '合同签批', category: 'business', color: C.slate,
+      keywords: ['contract', '合同', '签批', '审批', 'oa', '用印'],
+      svg: wrap(C.slate, '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 18l2 1 4.5-4.5a1.4 1.4 0 0 0-2-2L9 17z"/>'),
+    },
+    // ── 电气与能源 ──
+    {
+      id: 'battery', label: '电池', category: 'electrical', color: C.amber,
+      keywords: ['battery', '电池', 'ups', '储能', 'bms'],
+      svg: wrap(C.amber, '<rect x="2.5" y="9" width="17" height="7" rx="1.5"/><path d="M21.5 11.5v2M6.5 12.5h3M12 12.5h3"/>'),
+    },
+    {
+      id: 'power', label: '电网/电站', category: 'electrical', color: C.amber,
+      keywords: ['power', '电网', '电站', '高压', '配电', 'energy'],
+      svg: wrap(C.amber, '<path d="M13 3 5 13h5l-1 8 8-11h-5z"/>'),
+    },
+    {
+      id: 'motor', label: '电机', category: 'electrical', color: C.amber,
+      keywords: ['motor', '电机', '马达', '驱动', '设备'],
+      svg: wrap(C.amber, '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 5V2.5M12 21.5V19M5 12H2.5M21.5 12H19"/>'),
+    },
+    {
+      id: 'switch', label: '开关', category: 'electrical', color: C.amber,
+      keywords: ['switch', '开关', '断路器', '继电器', '回路'],
+      svg: wrap(C.amber, '<circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h10M12 4v3M12 17v3"/>'),
+    },
+    {
+      id: 'solar', label: '光伏', category: 'electrical', color: C.amber,
+      keywords: ['solar', '光伏', '太阳能', '面板', '新能源'],
+      svg: wrap(C.amber, '<rect x="4" y="4" width="16" height="11" rx="1"/><path d="M4 9.5h16M9.3 4v11M14.6 4v11M12 15v4M8 21h8"/>'),
+    },
+    {
+      id: 'chip', label: '芯片/PLC', category: 'electrical', color: C.amber,
+      keywords: ['chip', '芯片', 'plc', '控制器', '单片机', 'mcu'],
+      svg: wrap(C.amber, '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 7V3M14 7V3M10 21v-4M14 21v-4M7 10H3M7 14H3M21 10h-4M21 14h-4"/>'),
+    },
   ];
 
   const CATEGORIES = [
@@ -296,6 +360,8 @@
     { id: 'ai', label: '智能与通信' },
     { id: 'device', label: '终端与设备' },
     { id: 'integration', label: '集成与接口' },
+    { id: 'business', label: '商业与办公' },
+    { id: 'electrical', label: '电气与能源' },
     { id: 'custom', label: '我的图标' },
   ];
 
